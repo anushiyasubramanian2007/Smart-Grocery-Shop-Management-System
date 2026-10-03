@@ -1,0 +1,11 @@
+{
+  "name": "smart-grocery-management-system",
+  "version": "1.0.0",
+  "description": "Full-Stack Smart Grocery Shop Management System with Voice Assistant",
+  "scripts": {
+    "backend": "npm run dev --prefix backend",
+    "frontend": "npm run dev --prefix frontend",
+    "build": "npm run build --prefix frontend",
+    "start": "node backend/server.js"
+  }
+}
