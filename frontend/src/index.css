@@ -226,3 +226,177 @@ a {
     margin: 4mm 2mm;
   }
 }
+
+/* ==========================================================================
+   Universal Accessibility & Themes
+   ========================================================================== */
+
+/* Font Size Scaling */
+html[data-font-size="medium"] {
+  font-size: 16px;
+}
+html[data-font-size="large"] {
+  font-size: 18px;
+}
+html[data-font-size="xlarge"] {
+  font-size: 20px;
+}
+
+/* Dyslexic / High Readability Typography */
+html[data-dyslexic="true"] {
+  --font-family: 'OpenDyslexic', 'Segoe UI', -apple-system, sans-serif !important;
+  letter-spacing: 0.04em !important;
+  word-spacing: 0.08em !important;
+  line-height: 1.7 !important;
+}
+
+/* Reduced Motion Mode */
+html[data-reduced-motion="true"] *,
+html[data-reduced-motion="true"] *::before,
+html[data-reduced-motion="true"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
+
+/* High Visibility Focus Rings */
+html[data-focus-rings="true"] *:focus-visible {
+  outline: 3px solid #2563eb !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.4) !important;
+}
+
+/* Large Touch / Click Targets */
+html[data-large-targets="true"] button,
+html[data-large-targets="true"] .btn-primary,
+html[data-large-targets="true"] .form-input,
+html[data-large-targets="true"] select {
+  min-height: 48px !important;
+  padding: 12px 18px !important;
+  font-size: 15px !important;
+}
+
+/* Theme: High Contrast Light Mode (WCAG AAA) */
+html[data-theme="high-contrast-light"] {
+  --bg-app: #ffffff;
+  --bg-sidebar: #000000;
+  --bg-sidebar-hover: #1a1a1a;
+  --sidebar-text: #ffffff;
+  --sidebar-text-active: #ffff00;
+  --primary-blue: #0037c6;
+  --primary-blue-hover: #002585;
+  --primary-blue-light: #e6edff;
+  --card-bg: #ffffff;
+  --card-border: #000000;
+  --text-main: #000000;
+  --text-muted: #111111;
+  --text-light: #222222;
+  --color-success: #005a1c;
+  --color-success-bg: #d7ffd7;
+  --color-danger: #a60000;
+  --color-danger-bg: #ffe0e0;
+  --card-shadow: 0 0 0 2px #000000;
+}
+html[data-theme="high-contrast-light"] .form-input {
+  border: 2px solid #000000 !important;
+  color: #000000 !important;
+  background-color: #ffffff !important;
+  font-weight: 600 !important;
+}
+html[data-theme="high-contrast-light"] table,
+html[data-theme="high-contrast-light"] th,
+html[data-theme="high-contrast-light"] td {
+  border-color: #000000 !important;
+}
+
+/* Theme: High Contrast Dark Mode (OLED Slate) */
+html[data-theme="high-contrast-dark"] {
+  --bg-app: #080c14;
+  --bg-sidebar: #05080e;
+  --bg-sidebar-hover: #111827;
+  --sidebar-text: #94a3b8;
+  --sidebar-text-active: #60a5fa;
+  --primary-blue: #3b82f6;
+  --primary-blue-hover: #60a5fa;
+  --primary-blue-light: #1e293b;
+  --card-bg: #0f172a;
+  --card-border: #334155;
+  --text-main: #f8fafc;
+  --text-muted: #cbd5e1;
+  --text-light: #94a3b8;
+  --color-success: #4ade80;
+  --color-success-bg: #064e3b;
+  --color-danger: #f87171;
+  --color-danger-bg: #7f1d1d;
+  --color-warning: #fbbf24;
+  --color-warning-bg: #78350f;
+  --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+}
+html[data-theme="high-contrast-dark"] body {
+  background-color: #080c14 !important;
+  color: #f8fafc !important;
+}
+html[data-theme="high-contrast-dark"] header {
+  background-color: #0f172a !important;
+  border-color: #334155 !important;
+}
+html[data-theme="high-contrast-dark"] h1,
+html[data-theme="high-contrast-dark"] h2,
+html[data-theme="high-contrast-dark"] h3,
+html[data-theme="high-contrast-dark"] strong {
+  color: #f8fafc !important;
+}
+html[data-theme="high-contrast-dark"] p,
+html[data-theme="high-contrast-dark"] span {
+  color: #cbd5e1;
+}
+html[data-theme="high-contrast-dark"] .form-input,
+html[data-theme="high-contrast-dark"] select {
+  background-color: #1e293b !important;
+  border-color: #475569 !important;
+  color: #ffffff !important;
+}
+html[data-theme="high-contrast-dark"] table {
+  background-color: #0f172a !important;
+}
+html[data-theme="high-contrast-dark"] th {
+  background-color: #1e293b !important;
+  color: #e2e8f0 !important;
+  border-color: #334155 !important;
+}
+html[data-theme="high-contrast-dark"] td {
+  border-color: #1e293b !important;
+  color: #f1f5f9 !important;
+}
+
+/* Theme: Sepia (Warm Eye-Comfort for Night-time Billing) */
+html[data-theme="sepia"] {
+  --bg-app: #f4ece1;
+  --bg-sidebar: #2d241e;
+  --bg-sidebar-hover: #3f332a;
+  --sidebar-text: #c4b5a5;
+  --sidebar-text-active: #fcedd8;
+  --primary-blue: #8b5a2b;
+  --primary-blue-hover: #6d441f;
+  --primary-blue-light: #faecd9;
+  --card-bg: #fdfaf6;
+  --card-border: #ded2c3;
+  --text-main: #2b2118;
+  --text-muted: #6e5d4f;
+  --text-light: #9c8a7b;
+  --card-shadow: 0 1px 3px rgba(45, 36, 30, 0.08);
+}
+html[data-theme="sepia"] body {
+  background-color: #f4ece1 !important;
+  color: #2b2118 !important;
+}
+html[data-theme="sepia"] header {
+  background-color: #fdfaf6 !important;
+  border-color: #ded2c3 !important;
+}
+html[data-theme="sepia"] .form-input,
+html[data-theme="sepia"] select {
+  background-color: #f7f1e7 !important;
+  border-color: #cfbeab !important;
+  color: #2b2118 !important;
+}

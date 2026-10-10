@@ -6,7 +6,7 @@ export const connectDB = async () => {
   const uri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/smart_grocery';
   try {
     const conn = await mongoose.connect(uri, {
-      serverSelectionTimeoutMS: 2500, // Quick check
+      serverSelectionTimeoutMS: 8000, // 8s timeout for Atlas cloud
     });
     isMongoConnected = true;
     console.log(`[MongoDB] Connected: ${conn.connection.host}/${conn.connection.name}`);

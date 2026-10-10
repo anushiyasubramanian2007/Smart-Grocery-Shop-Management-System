@@ -3,7 +3,7 @@ import { parseCommand } from '../utils/nlpParser.js';
 
 export const parseVoiceCommand = async (req, res) => {
   try {
-    const { command } = req.body;
+    const command = req.body.command || req.body.text;
     if (!command || !command.trim()) {
       return res.status(400).json({ success: false, message: 'Command text is required' });
     }
@@ -39,7 +39,13 @@ export const executeVoiceAction = async (req, res) => {
 
     if (action === 'PURCHASE') {
       // Find or create product if missing
-      let product = await store.getProductByName(payload.productName);
+      let product = null;
+      if (payload.productId) {
+        product = await store.getProductById(payload.productId);
+      }
+      if (!product && payload.productName) {
+        product = await store.getProductByName(payload.productName);
+      }
       if (!product) {
         product = await store.createProduct({
           name: payload.productName,
@@ -73,7 +79,13 @@ export const executeVoiceAction = async (req, res) => {
     }
 
     if (action === 'SALE') {
-      const product = await store.getProductByName(payload.productName);
+      let product = null;
+      if (payload.productId) {
+        product = await store.getProductById(payload.productId);
+      }
+      if (!product && payload.productName) {
+        product = await store.getProductByName(payload.productName);
+      }
       if (!product) {
         return res.status(404).json({
           success: false,
@@ -106,6 +118,76 @@ export const executeVoiceAction = async (req, res) => {
         message: ttsFeedback,
         ttsFeedback,
         result
+      });
+    }
+
+    if (action === 'SALE_LIST' || (action === 'SALE' && payload.items && Array.isArray(payload.items))) {
+      const items = payload.items || [];
+      const results = [];
+      for (const item of items) {
+        const prod = (item.productId && await store.getProductById(item.productId)) ||
+          await store.getProductByName(item.productName) ||
+          await store.getProductByName(item.nameEnglish) ||
+          await store.getProductByName(item.nameTamil);
+
+        if (prod) {
+          const qty = Number(item.quantity) || 1;
+          const sellRes = await store.addSale({
+            productId: prod._id,
+            quantity: qty,
+            sellingPrice: item.sellingPrice || prod.sellingPrice || 25,
+            date: new Date().toISOString()
+          });
+          results.push(sellRes);
+        }
+      }
+
+      const ttsFeedback = `Sale for ${results.length} items recorded successfully.`;
+      return res.json({
+        success: true,
+        message: ttsFeedback,
+        ttsFeedback,
+        results
+      });
+    }
+
+    if (action === 'PURCHASE_LIST' || (action === 'PURCHASE' && payload.items && Array.isArray(payload.items))) {
+      const items = payload.items || [];
+      const results = [];
+      for (const item of items) {
+        let prod = (item.productId && await store.getProductById(item.productId)) ||
+          await store.getProductByName(item.productName) ||
+          await store.getProductByName(item.nameEnglish);
+
+        if (!prod) {
+          prod = await store.createProduct({
+            name: item.productName,
+            category: 'Grains & Pulses',
+            unit: item.unit || 'kg',
+            currentStock: 0,
+            averageCost: item.purchasePricePerUnit || 20,
+            sellingPrice: Math.round((item.purchasePricePerUnit || 20) * 1.2) || 25
+          });
+        }
+
+        const purRes = await store.addPurchase({
+          productId: prod._id,
+          quantity: item.quantity,
+          purchasePricePerUnit: item.purchasePricePerUnit || prod.averageCost || 20,
+          totalPurchasePrice: item.totalPurchasePrice || (item.quantity * (item.purchasePricePerUnit || prod.averageCost || 20)),
+          supplier: 'Voice Batch Order',
+          billNumber: 'V-' + Date.now().toString().slice(-4),
+          date: new Date().toISOString()
+        });
+        results.push(purRes);
+      }
+
+      const ttsFeedback = `Purchase of ${results.length} items recorded successfully.`;
+      return res.json({
+        success: true,
+        message: ttsFeedback,
+        ttsFeedback,
+        results
       });
     }
 

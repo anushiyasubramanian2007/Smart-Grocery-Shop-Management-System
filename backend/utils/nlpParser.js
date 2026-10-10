@@ -53,20 +53,31 @@ const SPOKEN_NUMBERS = [
   { words: ['padhimoonu', 'pathimoonu', 'பதின்மூன்று', 'பதின்மூணு', 'तेरह'], val: 13 },
   { words: ['panirendu', 'pannirendu', 'பன்னிரண்டு', 'பன்னிரெண்டு', 'बारह'], val: 12 },
   { words: ['padhinonnu', 'pathinonnu', 'பதினொன்று', 'பதினொன்னு', 'ग्यारह'], val: 11 },
-  { words: ['pathu', 'பத்து', 'दस', 'ten'], val: 10 },
-  { words: ['ombadhu', 'ombathu', 'onpadhu', 'onpathu', 'ஒன்பது', 'नौ', 'nine'], val: 9 },
-  { words: ['ettu', 'எட்டு', 'आठ', 'eight'], val: 8 },
-  { words: ['ezhu', 'yelu', 'elu', 'ஏழு', 'सात', 'seven'], val: 7 },
-  { words: ['aaru', 'ஆறு', 'छह', 'six'], val: 6 },
-  { words: ['anju', 'aindhu', 'ainthu', 'anja', 'ஐந்து', 'அஞ்சு', 'पाँच', 'पांच', 'five'], val: 5 },
-  { words: ['naalu', 'naangu', 'நான்கு', 'நாலு', 'चार', 'four'], val: 4 },
-  { words: ['moonu', 'moondru', 'மூன்று', 'மூணு', 'तीन', 'three'], val: 3 },
-  { words: ['rendu', 'erandu', 'irandu', 'இரண்டு', 'ரெண்டு', 'दो', 'two'], val: 2 },
-  { words: ['onnu', 'oru', 'ondru', 'ஒன்று', 'ஒரு', 'ஒன்னு', 'एक', 'one'], val: 1 },
+  { words: ['pathu', 'பத்து', 'दस', 'ten', 'டென்'], val: 10 },
+  { words: ['ombadhu', 'ombathu', 'onpadhu', 'onpathu', 'ஒன்பது', 'नौ', 'nine', 'நைன்'], val: 9 },
+  { words: ['ettu', 'எட்டு', 'आठ', 'eight', 'எய்ட்', 'ஏட்'], val: 8 },
+  { words: ['ezhu', 'yelu', 'elu', 'ஏழு', 'सात', 'seven', 'செவன்'], val: 7 },
+  { words: ['aaru', 'ஆறு', 'छह', 'six', 'சிக்ஸ்'], val: 6 },
+  { words: ['anju', 'aindhu', 'ainthu', 'anja', 'ஐந்து', 'அஞ்சு', 'पाँच', 'पांच', 'five', 'ஃபைவ்'], val: 5 },
+  { words: ['naalu', 'naangu', 'நான்கு', 'நாலு', 'चार', 'four', 'ஃபோர்', 'போர்'], val: 4 },
+  { words: ['moonu', 'moondru', 'மூன்று', 'மூணு', 'तीन', 'three', 'த்ரீ'], val: 3 },
+  { words: ['rendu', 'erandu', 'irandu', 'இரண்டு', 'ரெண்டு', 'दो', 'two', 'டூ'], val: 2 },
+  { words: ['onnu', 'oru', 'ondru', 'ஒன்று', 'ஒரு', 'ஒன்னு', 'एक', 'one', 'ஒன்'], val: 1 },
   { words: ['mukkal', 'முக்கால்', 'पौने'], val: 0.75 },
   { words: ['arai', 'ara', 'அரை', 'आधा', 'half'], val: 0.5 },
   { words: ['kaal', 'கால்', 'पाव', 'quarter'], val: 0.25 }
 ];
+
+export function normalizeUnits(text) {
+  if (!text) return '';
+  return text
+    .replace(/(?:கே\s*ஜி|கே\.ஜி|கிலோகிராம்|கிலோ|kilograms|kilogram|kilos|kilo|kgs)\b/giu, 'kg')
+    .replace(/(?:லிட்டர்கள்|லிட்டர்|லி|litres|liters|litre|liter)\b/giu, 'liter')
+    .replace(/(?:பாக்கெட்டுகள்|பாக்கெட்|பாகெட்|பாக்கெட்ஸ்|packets|packet|pkts|pkt)\b/giu, 'packet')
+    .replace(/(?:கிராம்கள்|கிராம்|grams|gram|gms|gm)\b/giu, 'gram')
+    .replace(/(?:டஜன்கள்|டஜன்|dozens|dozen)\b/giu, 'dozen')
+    .replace(/(?:துண்டுகள்|பீஸ்|பீசஸ்|pieces|piece|pcs|pc)\b/giu, 'piece');
+}
 
 function normalizeSpokenNumbers(text) {
   let res = ' ' + text + ' ';
@@ -588,6 +599,41 @@ export function parseCommand(rawText, availableProducts = []) {
     };
   }
 
+  // 4.5. Multi-Product List Detection (e.g. "உளுந்தம் பருப்பு 2 கே ஜி பாசிப்பருப்பு டூ கே ஜி" or multiple items listed together)
+  const multiProducts = extractAllProductsWithQuantities(rawText, availableProducts);
+  if (multiProducts.length > 1) {
+    const isMultiPurchase =
+      text.includes('vang') || text.includes('vaang') || text.includes('buy') || text.includes('purchase') ||
+      text.includes('kollumuthal') || text.includes('eduthen') || text.includes('khareed') ||
+      text.includes('வாங்க') || text.includes('கொள்முதல்') || text.includes('खरीद');
+
+    const summaryList = multiProducts.map(i => `${i.displayName || i.productName} ${i.quantity} ${i.unit}`).join(', ');
+    const totalAmount = multiProducts.reduce((acc, i) => acc + (i.quantity * (i.sellingPrice || 25)), 0);
+
+    if (isMultiPurchase) {
+      return {
+        action: 'PURCHASE_LIST',
+        items: multiProducts,
+        totalAmount,
+        originalText: rawText,
+        confirmationNeeded: true,
+        confirmationMessage: `Record purchase of ${multiProducts.length} items: ${summaryList}?`,
+        ttsMessage: `Purchase of ${multiProducts.length} items: ${summaryList}. Do you want to save this?`
+      };
+    } else {
+      // Default to Sale / Billing items list
+      return {
+        action: 'SALE_LIST',
+        items: multiProducts,
+        totalAmount,
+        originalText: rawText,
+        confirmationNeeded: true,
+        confirmationMessage: `Record sale of ${multiProducts.length} items: ${summaryList}?`,
+        ttsMessage: `Sale of ${multiProducts.length} items: ${summaryList}. Total ₹${totalAmount}. Do you want to save this?`
+      };
+    }
+  }
+
   // 5. Sale Intent (check before purchase so "vituten", "viten", etc. are captured accurately)
   const isSale =
     text.includes('sell') ||
@@ -880,6 +926,122 @@ export function extractCustomerName(text) {
   return 'Customer';
 }
 
+export function extractAllProductsWithQuantities(rawText, availableProducts = []) {
+  if (!rawText || typeof rawText !== 'string') return [];
+
+  // Step 1: Normalize numbers and units
+  let normalized = normalizeIndianGlyphs(rawText);
+  normalized = normalizeSpokenNumbers(normalized);
+  normalized = normalizeUnits(normalized);
+  const text = normalized.toLowerCase();
+
+  // Step 2: Build a dictionary of all aliases -> product
+  const allTargets = [];
+
+  // Add from available products
+  for (const p of availableProducts) {
+    if (p.nameTamil) allTargets.push({ alias: p.nameTamil.toLowerCase().trim(), product: p, canonical: p.nameEnglish || p.name });
+    if (p.nameEnglish) allTargets.push({ alias: p.nameEnglish.toLowerCase().trim(), product: p, canonical: p.nameEnglish });
+  }
+
+  // Add from PRODUCT_MAP
+  for (const item of PRODUCT_MAP) {
+    const matchedFromDb = availableProducts.find(p =>
+      (p.nameEnglish && p.nameEnglish.toLowerCase().includes(item.canonical.toLowerCase())) ||
+      (p.name && p.name.toLowerCase().includes(item.canonical.toLowerCase()))
+    );
+    const prodRef = matchedFromDb || { name: item.canonical, nameEnglish: item.canonical, unit: 'kg', sellingPrice: 25, averageCost: 0, currentStock: 100 };
+    for (const alias of item.aliases) {
+      allTargets.push({ alias: alias.toLowerCase().trim(), product: prodRef, canonical: item.canonical });
+    }
+  }
+
+  // Sort targets by alias length descending (so "Country Sugar" matches before "Sugar", "Urad Dal" before "Dal")
+  allTargets.sort((a, b) => b.alias.length - a.alias.length);
+
+  // Step 3: Find all occurrences in text
+  const occurrences = [];
+  for (const target of allTargets) {
+    if (!target.alias || target.alias.length < 2) continue;
+    let searchStart = 0;
+    while (searchStart < text.length) {
+      const idx = text.indexOf(target.alias, searchStart);
+      if (idx === -1) break;
+
+      // Check boundary around alias
+      const prevChar = idx > 0 ? text[idx - 1] : ' ';
+      const nextChar = (idx + target.alias.length < text.length) ? text[idx + target.alias.length] : ' ';
+      const isWordBoundary = /[^\p{L}\p{M}\p{N}]/u.test(prevChar) && /[^\p{L}\p{M}\p{N}]/u.test(nextChar);
+
+      if (isWordBoundary) {
+        // Check if overlaps with an already found longer occurrence
+        const overlaps = occurrences.some(occ =>
+          (idx >= occ.start && idx < occ.end) || (idx + target.alias.length > occ.start && idx + target.alias.length <= occ.end)
+        );
+
+        if (!overlaps) {
+          occurrences.push({
+            start: idx,
+            end: idx + target.alias.length,
+            alias: target.alias,
+            product: target.product,
+            canonical: target.canonical
+          });
+        }
+      }
+      searchStart = idx + target.alias.length;
+    }
+  }
+
+  if (occurrences.length === 0) {
+    return [];
+  }
+
+  // Sort occurrences by appearance order in the speech
+  occurrences.sort((a, b) => a.start - b.start);
+
+  // Step 4: For each product occurrence, extract its quantity and unit from surrounding text
+  const extractedItems = [];
+  for (let i = 0; i < occurrences.length; i++) {
+    const curr = occurrences[i];
+    const prevEnd = i > 0 ? occurrences[i - 1].end : 0;
+    const nextStart = i < occurrences.length - 1 ? occurrences[i + 1].start : text.length;
+
+    // Window after product: from curr.end to nextStart
+    const textAfter = text.slice(curr.end, nextStart);
+    // Window before product: from prevEnd to curr.start
+    const textBefore = text.slice(prevEnd, curr.start);
+
+    // Look for quantity and unit: first check after ("உளுந்தம் பருப்பு 2 kg"), then before ("2 kg உளுந்தம் பருப்பு")
+    let { quantity, unit } = extractQuantityAndUnit(textAfter);
+    if (quantity === null) {
+      const beforeQty = extractQuantityAndUnit(textBefore);
+      if (beforeQty.quantity !== null) {
+        quantity = beforeQty.quantity;
+        unit = beforeQty.unit || unit;
+      }
+    }
+
+    if (!quantity) quantity = 1;
+    if (!unit) unit = curr.product?.unit || 'kg';
+
+    extractedItems.push({
+      product: curr.product,
+      productId: curr.product?._id,
+      productName: curr.product?.name || curr.canonical,
+      nameTamil: curr.product?.nameTamil,
+      nameEnglish: curr.product?.nameEnglish || curr.canonical,
+      displayName: curr.product?.nameTamil ? `${curr.product.nameTamil} (${curr.product.nameEnglish || curr.canonical})` : (curr.product?.name || curr.canonical),
+      quantity,
+      unit,
+      sellingPrice: Number(curr.product?.sellingPrice) || 25,
+      purchasePricePerUnit: Number(curr.product?.averageCost) || 20
+    });
+  }
+
+  return extractedItems;
+}
+
 export function parseVoiceOrder(rawText, availableProducts = []) {
   if (!rawText || typeof rawText !== 'string') {
     return { error: 'Empty order text received' };
@@ -894,15 +1056,18 @@ export function parseVoiceOrder(rawText, availableProducts = []) {
     .replace(/^[a-zA-Z\u0B80-\u0BFF]+\s*(?:-?\s*ku|-?\s*kku|வுக்கு|க்கு)\b/i, '')
     .replace(/\b(?:means|nu podu|podu|poodu|enter pannu|enter|add pannu|add|vei|vekkavum|maathu|please|dhaan|than|bill|invoice)\b/gi, '');
 
-  // Split by commas, periods, semicolons, or conjunctions: and, marrum, apram, appuram, மற்றும், அப்புறம்
-  const segmentSeparators = /[,.;\n]|\s+(?:and|marrum|apram|appuram|மற்றும்|அப்புறம்)\s+/i;
-  let segments = cleanText.split(segmentSeparators).map(s => s.trim()).filter(Boolean);
+  // 1. Run multi-product extractor across the entire spoken paragraph/list
+  let extractedRaw = extractAllProductsWithQuantities(cleanText, availableProducts);
 
-  // If only 1 segment but multiple quantities or products exist, fallback to splitting by unit boundaries
-  if (segments.length === 1 && (cleanText.match(/\d+/g) || []).length > 1) {
-    const unitSplit = cleanText.split(/(?<=(?:kilo|kg|kilogram|liter|litre|l|packet|pkt|கிலோ|பாக்கெட்|லிட்டர்))\s+/i);
-    if (unitSplit.length > 1) {
-      segments = unitSplit.map(s => s.trim()).filter(Boolean);
+  // 2. If nothing found, try splitting by punctuation or conjunctions
+  if (extractedRaw.length === 0) {
+    const segmentSeparators = /[,.;\n]|\s+(?:and|marrum|apram|appuram|மற்றும்|அப்புறம்)\s+/i;
+    const segments = cleanText.split(segmentSeparators).map(s => s.trim()).filter(Boolean);
+    for (const seg of segments) {
+      const itemsInSeg = extractAllProductsWithQuantities(seg, availableProducts);
+      if (itemsInSeg.length > 0) {
+        extractedRaw.push(...itemsInSeg);
+      }
     }
   }
 
@@ -912,75 +1077,63 @@ export function parseVoiceOrder(rawText, availableProducts = []) {
   let hasStockError = false;
   const stockErrors = [];
 
-  for (const seg of segments) {
-    const dummySaleCmd = `${seg} viten`;
-    const parsed = parseCommand(dummySaleCmd, availableProducts);
+  for (const it of extractedRaw) {
+    const matchedProd = (it.product && it.product._id ? it.product : null) ||
+      (it.product?.name && availableProducts.find(p => p.name === it.product.name)) ||
+      (it.nameEnglish && availableProducts.find(p => p.nameEnglish && p.nameEnglish.toLowerCase() === it.nameEnglish.toLowerCase())) ||
+      (it.nameTamil && availableProducts.find(p => p.nameTamil === it.nameTamil)) ||
+      it.product ||
+      { name: it.productName, nameEnglish: it.nameEnglish || it.productName, unit: it.unit || 'kg', sellingPrice: 25, averageCost: 0, currentStock: 100 };
 
-    let matchedProd = null;
-    let quantity = 1;
-    let unit = 'kg';
+    const quantity = it.quantity || 1;
+    const unit = it.unit || matchedProd.unit || 'kg';
 
-    if (parsed.action === 'SALE' && parsed.productName && parsed.productName !== 'Dhal') {
-      matchedProd = (parsed.productId && availableProducts.find(p => String(p._id) === String(parsed.productId))) ||
-        availableProducts.find(p => p.name === parsed.productName || (p.nameEnglish && p.nameEnglish.toLowerCase() === parsed.productName.toLowerCase())) ||
-        { name: parsed.productName, nameEnglish: parsed.productName, unit: parsed.unit || 'kg', sellingPrice: parsed.sellingPrice || 25, averageCost: 0, currentStock: 100 };
-      quantity = parsed.quantity;
-      unit = parsed.unit;
-    } else {
-      const directParsed = parseCommand(seg, availableProducts);
-      if (directParsed.productName && directParsed.productName !== 'Dhal') {
-        matchedProd = availableProducts.find(p => p.name === directParsed.productName) ||
-          { name: directParsed.productName, nameEnglish: directParsed.productName, unit: directParsed.unit || 'kg', sellingPrice: directParsed.sellingPrice || 25, averageCost: 0, currentStock: 100 };
-        quantity = directParsed.quantity || 1;
-        unit = directParsed.unit || 'kg';
-      }
+    // Merge if duplicate (match by _id when both have _id, otherwise match by name)
+    const existingIdx = items.findIndex(i =>
+      (matchedProd._id && i.productId && String(i.productId) === String(matchedProd._id)) ||
+      (i.productName.toLowerCase() === (matchedProd.name || it.productName).toLowerCase())
+    );
+    if (existingIdx !== -1) {
+      items[existingIdx].quantity += quantity;
+      items[existingIdx].totalPrice = Math.round(items[existingIdx].quantity * items[existingIdx].unitPrice * 100) / 100;
+      items[existingIdx].profit = Math.round(items[existingIdx].quantity * (items[existingIdx].unitPrice - items[existingIdx].costPrice) * 100) / 100;
+      items[existingIdx].hasSufficientStock = items[existingIdx].currentStock >= items[existingIdx].quantity;
+      continue;
     }
 
-    if (matchedProd) {
-      // If product already in list, merge quantity
-      const existingIdx = items.findIndex(i => String(i.productId) === String(matchedProd._id));
-      if (existingIdx !== -1) {
-        items[existingIdx].quantity += quantity;
-        items[existingIdx].totalPrice = Math.round(items[existingIdx].quantity * items[existingIdx].unitPrice * 100) / 100;
-        items[existingIdx].profit = Math.round(items[existingIdx].quantity * (items[existingIdx].unitPrice - items[existingIdx].costPrice) * 100) / 100;
-        items[existingIdx].hasSufficientStock = items[existingIdx].currentStock >= items[existingIdx].quantity;
-        continue;
-      }
+    const unitPrice = Number(matchedProd.sellingPrice) || 25;
+    const costPrice = Number(matchedProd.averageCost) || 0;
+    const totalPrice = Math.round(quantity * unitPrice * 100) / 100;
+    const itemProfit = Math.round(quantity * (unitPrice - costPrice) * 100) / 100;
+    const currentStock = Number(matchedProd.currentStock) || 0;
+    const minimumStock = Number(matchedProd.minimumStock) || 5;
 
-      const unitPrice = Number(matchedProd.sellingPrice) || 0;
-      const costPrice = Number(matchedProd.averageCost) || 0;
-      const totalPrice = Math.round(quantity * unitPrice * 100) / 100;
-      const itemProfit = Math.round(quantity * (unitPrice - costPrice) * 100) / 100;
-      const currentStock = Number(matchedProd.currentStock) || 0;
-      const minimumStock = Number(matchedProd.minimumStock) || 5;
-
-      const hasSufficient = currentStock >= quantity;
-      if (!hasSufficient) {
-        hasStockError = true;
-        const errMsg = `${matchedProd.nameEnglish || matchedProd.name} stock-la ${currentStock} ${matchedProd.unit || 'kg'} mattum dhaan irukku. ${quantity} ${unit} sale panna mudiyadhu.`;
-        stockErrors.push(errMsg);
-      }
-
-      items.push({
-        productId: matchedProd._id,
-        productName: matchedProd.name,
-        nameTamil: matchedProd.nameTamil,
-        nameEnglish: matchedProd.nameEnglish,
-        displayName: matchedProd.nameEnglish ? `${matchedProd.nameTamil} (${matchedProd.nameEnglish})` : matchedProd.name,
-        quantity,
-        unit: unit || matchedProd.unit || 'kg',
-        unitPrice,
-        costPrice,
-        totalPrice,
-        profit: itemProfit,
-        currentStock,
-        minimumStock,
-        hasSufficientStock: hasSufficient
-      });
-
-      subtotal += totalPrice;
-      totalProfit += itemProfit;
+    const hasSufficient = currentStock >= quantity;
+    if (!hasSufficient) {
+      hasStockError = true;
+      const errMsg = `${matchedProd.nameEnglish || matchedProd.name} stock-la ${currentStock} ${matchedProd.unit || 'kg'} mattum dhaan irukku. ${quantity} ${unit} sale panna mudiyadhu.`;
+      stockErrors.push(errMsg);
     }
+
+    items.push({
+      productId: matchedProd._id,
+      productName: matchedProd.name,
+      nameTamil: matchedProd.nameTamil,
+      nameEnglish: matchedProd.nameEnglish,
+      displayName: matchedProd.nameEnglish ? `${matchedProd.nameTamil || matchedProd.name} (${matchedProd.nameEnglish})` : matchedProd.name,
+      quantity,
+      unit,
+      unitPrice,
+      costPrice,
+      totalPrice,
+      profit: itemProfit,
+      currentStock,
+      minimumStock,
+      hasSufficientStock: hasSufficient
+    });
+
+    subtotal += totalPrice;
+    totalProfit += itemProfit;
   }
 
   subtotal = Math.round(subtotal * 100) / 100;

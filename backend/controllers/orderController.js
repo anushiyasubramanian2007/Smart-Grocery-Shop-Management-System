@@ -101,7 +101,21 @@ export const parseVoiceOrderEndpoint = async (req, res) => {
  */
 export const createOrder = async (req, res) => {
   try {
-    const { customerName, items, discount, paymentMethod, invoiceNumber } = req.body;
+    const {
+      customerName,
+      items,
+      discount,
+      paymentMethod,
+      invoiceNumber,
+      paymentStatus,
+      paymentReference,
+      upiId,
+      amountReceived,
+      changeReturned,
+      razorpayOrderId,
+      razorpayPaymentId,
+      razorpaySignature
+    } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
@@ -115,7 +129,15 @@ export const createOrder = async (req, res) => {
       items,
       discount: Number(discount) || 0,
       paymentMethod: paymentMethod || 'Cash',
-      invoiceNumber
+      invoiceNumber,
+      paymentStatus: paymentStatus || 'Paid',
+      paymentReference: paymentReference || '',
+      upiId: upiId || '',
+      amountReceived: Number(amountReceived) || 0,
+      changeReturned: Number(changeReturned) || 0,
+      razorpayOrderId: razorpayOrderId || '',
+      razorpayPaymentId: razorpayPaymentId || '',
+      razorpaySignature: razorpaySignature || ''
     });
 
     return res.status(201).json({

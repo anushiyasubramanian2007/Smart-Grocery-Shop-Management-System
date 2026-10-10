@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 
 const saleSchema = new mongoose.Schema({
-  productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
+  productId: { type: mongoose.Schema.Types.Mixed, required: false },
   productName: { type: String, required: true },
   quantity: { type: Number, required: true, min: 0.01 },
   unit: { type: String, default: 'kg' },

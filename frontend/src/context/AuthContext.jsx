@@ -39,6 +39,33 @@ export const AuthProvider = ({ children }) => {
     throw new Error('Login failed');
   };
 
+  const loginWithGoogle = async (googleData) => {
+    const res = await authAPI.googleLogin(googleData);
+    if (res.data && res.data.token) {
+      localStorage.setItem('smart_grocery_token', res.data.token);
+      setToken(res.data.token);
+      setOwner(res.data.owner);
+      return res.data;
+    }
+    throw new Error('Google authentication failed');
+  };
+
+  const sendGoogleVerificationCode = async (email) => {
+    const res = await authAPI.sendGoogleCode(email);
+    return res.data;
+  };
+
+  const verifyGoogleEmail = async (email, code, name) => {
+    const res = await authAPI.verifyGoogleCode({ email, code, name });
+    if (res.data && res.data.token) {
+      localStorage.setItem('smart_grocery_token', res.data.token);
+      setToken(res.data.token);
+      setOwner(res.data.owner);
+      return res.data;
+    }
+    throw new Error('Google verification failed');
+  };
+
   const logout = () => {
     localStorage.removeItem('smart_grocery_token');
     setToken(null);
@@ -50,7 +77,18 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ token, owner, login, logout, updateOwnerState, isAuthenticated: !!token, loading }}>
+    <AuthContext.Provider value={{
+      token,
+      owner,
+      login,
+      loginWithGoogle,
+      sendGoogleVerificationCode,
+      verifyGoogleEmail,
+      logout,
+      updateOwnerState,
+      isAuthenticated: !!token,
+      loading
+    }}>
       {children}
     </AuthContext.Provider>
   );

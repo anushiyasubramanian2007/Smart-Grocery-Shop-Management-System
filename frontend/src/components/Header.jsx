@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, ChevronDown, User, AlertTriangle } from 'lucide-react';
+import { Bell, ChevronDown, User, AlertTriangle, Eye, Sun, Moon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useAccessibility } from '../context/AccessibilityContext';
 import { productAPI } from '../services/api';
 
 export default function Header({ title, subtitle }) {
   const { owner } = useAuth();
+  const { a11y, updateAccessibility, playChime, announce } = useAccessibility();
   const navigate = useNavigate();
   const [lowStockList, setLowStockList] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -63,8 +65,60 @@ export default function Header({ title, subtitle }) {
         </p>
       </div>
 
-      {/* Right Controls: Notifications & Owner Profile */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+      {/* Right Controls: Quick Accessibility, Theme, Notifications & Owner Profile */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        {/* Quick Accessibility Button */}
+        <button
+          onClick={() => {
+            playChime('click');
+            navigate('/settings');
+          }}
+          style={{
+            width: '40px',
+            height: '40px',
+            borderRadius: '50%',
+            backgroundColor: '#eff6ff',
+            border: '1px solid #bfdbfe',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#2563eb',
+            cursor: 'pointer',
+            transition: 'all 0.15s'
+          }}
+          title="Universal Accessibility & Themes (Alt+S)"
+          aria-label="Universal Accessibility & Themes"
+        >
+          <Eye size={18} />
+        </button>
+
+        {/* Quick Theme Toggle */}
+        <button
+          onClick={() => {
+            playChime('click');
+            const nextTheme = a11y.themeMode === 'high-contrast-dark' ? 'standard' : 'high-contrast-dark';
+            updateAccessibility({ themeMode: nextTheme });
+            announce(`Theme changed to ${nextTheme}`);
+          }}
+          style={{
+            width: '40px',
+            height: '40px',
+            borderRadius: '50%',
+            backgroundColor: '#f8fafc',
+            border: '1px solid #e2e8f0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: a11y.themeMode === 'high-contrast-dark' ? '#fbbf24' : '#475569',
+            cursor: 'pointer',
+            transition: 'all 0.15s'
+          }}
+          title="Toggle High Contrast Dark Theme (Alt+H)"
+          aria-label="Toggle High Contrast Dark Theme"
+        >
+          {a11y.themeMode === 'high-contrast-dark' ? <Sun size={18} /> : <Moon size={18} />}
+        </button>
+
         {/* Notification Bell */}
         <div style={{ position: 'relative' }}>
           <button

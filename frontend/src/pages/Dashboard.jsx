@@ -9,7 +9,13 @@ import {
   ArrowDownRight,
   ShoppingBag,
   Volume2,
-  VolumeX
+  VolumeX,
+  Sparkles,
+  Package,
+  Clock,
+  ShieldAlert,
+  ArrowRight,
+  BrainCircuit
 } from 'lucide-react';
 import {
   BarChart,
@@ -20,10 +26,12 @@ import {
   ResponsiveContainer,
   CartesianGrid
 } from 'recharts';
-import { reportAPI } from '../services/api';
+import { reportAPI, intelligenceAPI } from '../services/api';
 import speechService from '../utils/speech';
 
 export default function Dashboard() {
+  const [intelSummary, setIntelSummary] = useState(null);
+  const [intelLoading, setIntelLoading] = useState(true);
   const [data, setData] = useState({
     todaySales: 5250,
     todayNetProfit: 1250,
@@ -83,7 +91,22 @@ export default function Dashboard() {
         setLoading(false);
       }
     };
+
+    const fetchIntelligence = async () => {
+      try {
+        const res = await intelligenceAPI.getSummary();
+        if (res.data && res.data.data) {
+          setIntelSummary(res.data.data);
+        }
+      } catch (err) {
+        console.error('Failed to load intelligence summary:', err);
+      } finally {
+        setIntelLoading(false);
+      }
+    };
+
     fetchDashboard();
+    fetchIntelligence();
   }, []);
 
   const formatPrice = (val) => Number(val || 0).toLocaleString('en-IN');
@@ -243,6 +266,337 @@ export default function Dashboard() {
             <ArrowDownRight size={16} />
             <span>{data.expenseChange}% vs yesterday</span>
           </div>
+        </div>
+      </div>
+
+      {/* NEW SECTION: SMART GROCERY INTELLIGENCE */}
+      <div style={{
+        backgroundColor: '#ffffff',
+        borderRadius: '18px',
+        padding: '26px',
+        border: '1px solid #e2e8f0',
+        boxShadow: 'var(--card-shadow)',
+        marginBottom: '28px',
+        background: 'linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)'
+      }}>
+        {/* Section Header */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '20px',
+          flexWrap: 'wrap',
+          gap: '12px'
+        }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+              <div style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                background: 'linear-gradient(135deg, #7c3aed, #2563eb)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#ffffff'
+              }}>
+                <Sparkles size={18} />
+              </div>
+              <h3 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+                SMART GROCERY INTELLIGENCE
+              </h3>
+              <span style={{
+                fontSize: '11px',
+                fontWeight: '700',
+                padding: '3px 8px',
+                borderRadius: '999px',
+                backgroundColor: '#ede9fe',
+                color: '#7c3aed',
+                textTransform: 'uppercase'
+              }}>
+                Decision Support
+              </span>
+            </div>
+            <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
+              Smart Reorder Formulas • FEFO Expiry Scheduling • Dead Stock Analytics • What-If Simulation
+            </p>
+          </div>
+
+          <Link
+            to="/intelligence"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              backgroundColor: '#2563eb',
+              color: '#ffffff',
+              padding: '10px 18px',
+              borderRadius: '10px',
+              fontSize: '13px',
+              fontWeight: '600',
+              textDecoration: 'none',
+              boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
+              transition: 'all 0.2s'
+            }}
+          >
+            <span>Open Intelligence Hub</span>
+            <ArrowRight size={16} />
+          </Link>
+        </div>
+
+        {/* 4 Feature Quick Tabs / Links */}
+        <div style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '8px',
+          marginBottom: '22px',
+          paddingBottom: '16px',
+          borderBottom: '1px solid #e2e8f0'
+        }}>
+          <Link
+            to="/intelligence?tab=reorder"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              borderRadius: '8px',
+              backgroundColor: '#ffffff',
+              border: '1px solid #cbd5e1',
+              color: '#334155',
+              fontSize: '12px',
+              fontWeight: '600',
+              textDecoration: 'none'
+            }}
+          >
+            <span>📦 Smart Reorder</span>
+          </Link>
+          <Link
+            to="/intelligence?tab=expiry"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              borderRadius: '8px',
+              backgroundColor: '#ffffff',
+              border: '1px solid #cbd5e1',
+              color: '#334155',
+              fontSize: '12px',
+              fontWeight: '600',
+              textDecoration: 'none'
+            }}
+          >
+            <span>⏳ Expiry Intelligence</span>
+          </Link>
+          <Link
+            to="/intelligence?tab=profit"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              borderRadius: '8px',
+              backgroundColor: '#ffffff',
+              border: '1px solid #cbd5e1',
+              color: '#334155',
+              fontSize: '12px',
+              fontWeight: '600',
+              textDecoration: 'none'
+            }}
+          >
+            <span>📉 Profit & Dead Stock</span>
+          </Link>
+          <Link
+            to="/intelligence?tab=simulator"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              borderRadius: '8px',
+              backgroundColor: '#ffffff',
+              border: '1px solid #cbd5e1',
+              color: '#334155',
+              fontSize: '12px',
+              fontWeight: '600',
+              textDecoration: 'none'
+            }}
+          >
+            <span>💡 What-If Simulator</span>
+          </Link>
+        </div>
+
+        {/* 4 Summary Cards */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+          gap: '16px'
+        }}>
+
+          {/* Card 2: Products to Reorder */}
+          <Link
+            to="/intelligence?tab=reorder"
+            style={{
+              textDecoration: 'none',
+              backgroundColor: '#ffffff',
+              border: (intelSummary?.reorderNeededCount || 0) > 0 ? '1px solid #fecaca' : '1px solid #e2e8f0',
+              borderRadius: '14px',
+              padding: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+              <span style={{ fontSize: '20px' }}>📦</span>
+              <span style={{
+                fontSize: '11px',
+                fontWeight: '700',
+                padding: '2px 8px',
+                borderRadius: '999px',
+                backgroundColor: (intelSummary?.reorderNeededCount || 0) > 0 ? '#fee2e2' : '#f0fdf4',
+                color: (intelSummary?.reorderNeededCount || 0) > 0 ? '#b91c1c' : '#15803d'
+              }}>
+                {(intelSummary?.reorderNeededCount || 0) > 0 ? 'Action Needed' : 'Healthy'}
+              </span>
+            </div>
+            <div>
+              <div style={{ fontSize: '24px', fontWeight: '800', color: '#0f172a' }}>
+                {intelLoading ? '...' : (intelSummary?.reorderNeededCount || 0)}
+              </div>
+              <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginTop: '2px' }}>
+                Products to Reorder
+              </div>
+              <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+                Formula: D₇ + SS - Current Stock
+              </div>
+            </div>
+          </Link>
+
+          {/* Card 3: Expiring Soon */}
+          <Link
+            to="/intelligence?tab=expiry"
+            style={{
+              textDecoration: 'none',
+              backgroundColor: '#ffffff',
+              border: ((intelSummary?.expiringSoonCount || 0) + (intelSummary?.urgentExpiryCount || 0)) > 0 ? '1px solid #fed7aa' : '1px solid #e2e8f0',
+              borderRadius: '14px',
+              padding: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+              <span style={{ fontSize: '20px' }}>⏳</span>
+              <span style={{
+                fontSize: '11px',
+                fontWeight: '700',
+                padding: '2px 8px',
+                borderRadius: '999px',
+                backgroundColor: '#fff7ed',
+                color: '#c2410c'
+              }}>
+                FEFO Order
+              </span>
+            </div>
+            <div>
+              <div style={{ fontSize: '24px', fontWeight: '800', color: '#0f172a' }}>
+                {intelLoading ? '...' : ((intelSummary?.expiringSoonCount || 0) + (intelSummary?.urgentExpiryCount || 0))}
+              </div>
+              <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginTop: '2px' }}>
+                Expiring Soon
+              </div>
+              <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+                Batches needing prioritized sales
+              </div>
+            </div>
+          </Link>
+
+          {/* Card 4: Dead Stock Items */}
+          <Link
+            to="/intelligence?tab=profit"
+            style={{
+              textDecoration: 'none',
+              backgroundColor: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '14px',
+              padding: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+              <span style={{ fontSize: '20px' }}>📉</span>
+              <span style={{
+                fontSize: '11px',
+                fontWeight: '700',
+                padding: '2px 8px',
+                borderRadius: '999px',
+                backgroundColor: '#f1f5f9',
+                color: '#475569'
+              }}>
+                0 Sales &gt;14d
+              </span>
+            </div>
+            <div>
+              <div style={{ fontSize: '24px', fontWeight: '800', color: '#0f172a' }}>
+                {intelLoading ? '...' : (intelSummary?.deadStockCount || 0)}
+              </div>
+              <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginTop: '2px' }}>
+                Dead Stock Items
+              </div>
+              <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+                ₹{formatPrice(intelSummary?.deadStockValue || 0)} capital tied up
+              </div>
+            </div>
+          </Link>
+
+          {/* Card 5: Estimated Profit Opportunities */}
+          <Link
+            to="/intelligence?tab=profit"
+            style={{
+              textDecoration: 'none',
+              backgroundColor: '#ffffff',
+              border: '1px solid #bbf7d0',
+              borderRadius: '14px',
+              padding: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+              <span style={{ fontSize: '20px' }}>💰</span>
+              <span style={{
+                fontSize: '11px',
+                fontWeight: '700',
+                padding: '2px 8px',
+                borderRadius: '999px',
+                backgroundColor: '#dcfce7',
+                color: '#15803d'
+              }}>
+                Opportunity
+              </span>
+            </div>
+            <div>
+              <div style={{ fontSize: '24px', fontWeight: '800', color: '#15803d' }}>
+                ₹{intelLoading ? '...' : formatPrice(intelSummary?.potentialProfitRecovery || 0)}
+              </div>
+              <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginTop: '2px' }}>
+                Profit Opportunities
+              </div>
+              <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+                Estimated leak recovery & dead stock
+              </div>
+            </div>
+          </Link>
         </div>
       </div>
 

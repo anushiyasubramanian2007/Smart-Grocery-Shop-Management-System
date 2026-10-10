@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 
 const orderItemSchema = new mongoose.Schema({
-  productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: false },
+  productId: { type: mongoose.Schema.Types.Mixed, required: false },
   productName: { type: String, required: true },
   nameTamil: { type: String },
   nameEnglish: { type: String },
@@ -22,7 +22,15 @@ const orderSchema = new mongoose.Schema({
   discount: { type: Number, default: 0 },
   grandTotal: { type: Number, required: true, min: 0 },
   totalProfit: { type: Number, default: 0 },
-  paymentMethod: { type: String, enum: ['Cash', 'UPI', 'Card', 'Other'], default: 'Cash' },
+  paymentMethod: { type: String, default: 'Cash' },
+  paymentStatus: { type: String, default: 'Paid' },
+  paymentReference: { type: String, default: '' },
+  upiId: { type: String, default: '' },
+  amountReceived: { type: Number, default: 0 },
+  changeReturned: { type: Number, default: 0 },
+  razorpayOrderId: { type: String, default: '' },
+  razorpayPaymentId: { type: String, default: '' },
+  razorpaySignature: { type: String, default: '' },
   date: { type: Date, default: Date.now },
   time: { type: String },
   lowStockAlerts: [{ type: String }]

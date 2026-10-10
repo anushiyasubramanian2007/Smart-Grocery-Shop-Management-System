@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, ShoppingBag, Calculator, Calendar, Building2, Hash } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { Plus, ShoppingBag, Calculator, Calendar, Building2, Hash, Sparkles } from 'lucide-react';
 import { productAPI, purchaseAPI } from '../services/api';
 
 export default function Purchases() {
+  const [searchParams] = useSearchParams();
   const [products, setProducts] = useState([]);
   const [purchases, setPurchases] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -10,11 +12,13 @@ export default function Purchases() {
   const [errorMsg, setErrorMsg] = useState('');
 
   const [formData, setFormData] = useState({
-    productId: '',
-    quantity: '',
-    purchasePricePerUnit: '',
-    supplier: '',
+    productId: searchParams.get('productId') || '',
+    quantity: searchParams.get('quantity') || '',
+    purchasePricePerUnit: searchParams.get('price') || '',
+    supplier: searchParams.get('supplier') || '',
     billNumber: '',
+    batchNumber: '',
+    expiryDate: '',
     date: new Date().toISOString().slice(0, 10)
   });
 
@@ -26,7 +30,16 @@ export default function Purchases() {
       ]);
       if (prodRes.data && prodRes.data.data) {
         setProducts(prodRes.data.data);
-        if (prodRes.data.data.length > 0 && !formData.productId) {
+        const paramPid = searchParams.get('productId');
+        if (paramPid) {
+          setFormData(prev => ({
+            ...prev,
+            productId: paramPid,
+            quantity: searchParams.get('quantity') || prev.quantity,
+            purchasePricePerUnit: searchParams.get('price') || prev.purchasePricePerUnit,
+            supplier: searchParams.get('supplier') || prev.supplier
+          }));
+        } else if (prodRes.data.data.length > 0 && !formData.productId) {
           setFormData(prev => ({ ...prev, productId: prodRes.data.data[0]._id }));
         }
       }
@@ -40,7 +53,7 @@ export default function Purchases() {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [searchParams]);
 
   const selectedProduct = products.find(p => p._id === formData.productId);
 
@@ -87,7 +100,9 @@ export default function Purchases() {
         quantity: '',
         purchasePricePerUnit: '',
         supplier: '',
-        billNumber: ''
+        billNumber: '',
+        batchNumber: '',
+        expiryDate: ''
       }));
       await fetchData();
     } catch (err) {
@@ -143,6 +158,27 @@ export default function Purchases() {
             marginBottom: '18px'
           }}>
             {successMsg}
+          </div>
+        )}
+
+        {searchParams.get('productId') && (
+          <div style={{
+            backgroundColor: '#ede9fe',
+            border: '1px solid #ddd6fe',
+            color: '#6d28d9',
+            padding: '12px 16px',
+            borderRadius: '10px',
+            marginBottom: '20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            fontSize: '13px',
+            fontWeight: '600'
+          }}>
+            <Sparkles size={18} />
+            <span>
+              Reviewing AI Smart Reorder recommendation. Product, quantity, and estimated cost have been prefilled. Verify supplier & batch information, then click Add Purchase to confirm.
+            </span>
           </div>
         )}
 
@@ -231,7 +267,7 @@ export default function Purchases() {
             {/* Date */}
             <div>
               <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#334155', marginBottom: '6px' }}>
-                Date
+                Purchase Date
               </label>
               <input
                 type="date"
@@ -254,6 +290,35 @@ export default function Purchases() {
                 value={formData.billNumber}
                 onChange={handleChange}
                 placeholder="e.g. B1234"
+                className="form-input"
+              />
+            </div>
+
+            {/* Batch Number */}
+            <div>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#334155', marginBottom: '6px' }}>
+                Batch Number (தொகுதி எண் - Optional)
+              </label>
+              <input
+                type="text"
+                name="batchNumber"
+                value={formData.batchNumber}
+                onChange={handleChange}
+                placeholder="e.g. B-2026-001"
+                className="form-input"
+              />
+            </div>
+
+            {/* Expiry Date */}
+            <div>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#334155', marginBottom: '6px' }}>
+                Expiry Date (காலாவதி தேதி - Optional)
+              </label>
+              <input
+                type="date"
+                name="expiryDate"
+                value={formData.expiryDate}
+                onChange={handleChange}
                 className="form-input"
               />
             </div>
@@ -317,6 +382,7 @@ export default function Purchases() {
                 <th style={{ padding: '14px 16px' }}>Product</th>
                 <th style={{ padding: '14px 16px' }}>Qty</th>
                 <th style={{ padding: '14px 16px' }}>Total Price</th>
+                <th style={{ padding: '14px 16px' }}>Batch & Expiry</th>
                 <th style={{ padding: '14px 16px' }}>Date</th>
                 <th style={{ padding: '14px 16px' }}>Supplier / Bill</th>
               </tr>
@@ -324,7 +390,7 @@ export default function Purchases() {
             <tbody>
               {purchases.length === 0 ? (
                 <tr>
-                  <td colSpan="5" style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>
+                  <td colSpan="6" style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>
                     No purchases recorded yet
                   </td>
                 </tr>
@@ -342,6 +408,20 @@ export default function Purchases() {
                     </td>
                     <td style={{ padding: '14px 16px', fontWeight: '600', color: '#0f172a' }}>
                       ₹{p.totalPurchasePrice}
+                    </td>
+                    <td style={{ padding: '14px 16px', fontSize: '13px' }}>
+                      {p.batchNumber ? (
+                        <div style={{ fontWeight: '600', color: '#1e293b' }}>
+                          Batch: {p.batchNumber}
+                        </div>
+                      ) : null}
+                      {p.expiryDate ? (
+                        <div style={{ color: '#ea580c', fontSize: '12px' }}>
+                          Exp: {formatDate(p.expiryDate)}
+                        </div>
+                      ) : (
+                        !p.batchNumber && <span style={{ color: '#94a3b8' }}>-</span>
+                      )}
                     </td>
                     <td style={{ padding: '14px 16px', color: '#64748b' }}>
                       {formatDate(p.date)}

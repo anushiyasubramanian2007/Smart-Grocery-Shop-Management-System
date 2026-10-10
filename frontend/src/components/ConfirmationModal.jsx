@@ -79,8 +79,8 @@ export default function ConfirmationModal({
   const { action, productName, quantity, unit, totalPurchasePrice, sellingPrice, totalAmount, category, amount } = parsedCommand;
 
   const getActionColor = () => {
-    if (action === 'PURCHASE') return { bg: '#dbeafe', text: '#2563eb', border: '#bfdbfe' };
-    if (action === 'SALE') return { bg: '#dcfce7', text: '#16a34a', border: '#bbf7d0' };
+    if (action?.includes('PURCHASE')) return { bg: '#dbeafe', text: '#2563eb', border: '#bfdbfe' };
+    if (action?.includes('SALE')) return { bg: '#dcfce7', text: '#16a34a', border: '#bbf7d0' };
     return { bg: '#ffedd5', text: '#ea580c', border: '#fed7aa' };
   };
 
@@ -158,32 +158,61 @@ export default function ConfirmationModal({
           borderTop: '1px solid #e2e8f0',
           borderBottom: '1px solid #e2e8f0',
           padding: '16px 24px',
-          textAlign: 'left'
+          textAlign: 'left',
+          maxHeight: '260px',
+          overflowY: 'auto'
         }}>
-          {action === 'PURCHASE' && (
+          {parsedCommand.items && parsedCommand.items.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', textTransform: 'uppercase' }}>
+                Products Identified ({parsedCommand.items.length}):
+              </div>
+              {parsedCommand.items.map((it, idx) => (
+                <div key={idx} style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '8px 12px',
+                  backgroundColor: '#ffffff',
+                  borderRadius: '8px',
+                  border: '1px solid #e2e8f0',
+                  fontSize: '13px'
+                }}>
+                  <div>
+                    <strong>{it.displayName || it.nameTamil ? `${it.nameTamil} (${it.nameEnglish || it.productName})` : it.productName}</strong>
+                  </div>
+                  <div style={{ fontWeight: '700', color: '#2563eb' }}>
+                    {it.quantity} {it.unit}
+                  </div>
+                </div>
+              ))}
+              {parsedCommand.totalAmount ? (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '14px', fontWeight: '700', color: '#0f172a' }}>
+                  <span>Estimated Total:</span>
+                  <span>₹{parsedCommand.totalAmount}</span>
+                </div>
+              ) : null}
+            </div>
+          ) : action === 'PURCHASE' ? (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13px' }}>
               <div><span style={{ color: '#64748b' }}>Product:</span> <strong>{productName}</strong></div>
               <div><span style={{ color: '#64748b' }}>Quantity:</span> <strong>{quantity} {unit}</strong></div>
               <div><span style={{ color: '#64748b' }}>Total Price:</span> <strong>₹{totalPurchasePrice}</strong></div>
               <div><span style={{ color: '#64748b' }}>Unit Cost:</span> <strong>₹{parsedCommand.purchasePricePerUnit}/{unit}</strong></div>
             </div>
-          )}
-
-          {action === 'SALE' && (
+          ) : action === 'SALE' ? (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13px' }}>
               <div><span style={{ color: '#64748b' }}>Product:</span> <strong>{productName}</strong></div>
               <div><span style={{ color: '#64748b' }}>Quantity:</span> <strong>{quantity} {unit}</strong></div>
               <div><span style={{ color: '#64748b' }}>Selling Price:</span> <strong>₹{sellingPrice}/{unit}</strong></div>
               <div><span style={{ color: '#64748b' }}>Total Revenue:</span> <strong>₹{totalAmount}</strong></div>
             </div>
-          )}
-
-          {action === 'EXPENSE' && (
+          ) : action === 'EXPENSE' ? (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13px' }}>
               <div><span style={{ color: '#64748b' }}>Category:</span> <strong>{category}</strong></div>
               <div><span style={{ color: '#64748b' }}>Amount:</span> <strong>₹{amount}</strong></div>
             </div>
-          )}
+          ) : null}
         </div>
 
         {/* Audio status banner */}

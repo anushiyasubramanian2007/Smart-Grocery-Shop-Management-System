@@ -22,14 +22,27 @@ import {
   X,
   Search,
   RefreshCw,
-  User
+  User,
+  QrCode,
+  Copy,
+  Check,
+  ExternalLink,
+  Edit2,
+  Upload,
+  Image as ImageIcon,
+  Info,
+  ShieldCheck,
+  CheckCheck
 } from 'lucide-react';
 import speechService from '../utils/speech';
-import { orderAPI, productAPI } from '../services/api';
+import { orderAPI, productAPI, authAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useAccessibility } from '../context/AccessibilityContext';
+import { processRazorpayPayment } from '../utils/razorpay';
 
 export default function CustomerBilling() {
-  const { owner } = useAuth();
+  const { owner, updateOwnerState } = useAuth();
+  const { a11y, playChime, announce } = useAccessibility();
   const [searchParams] = useSearchParams();
 
   // Master product catalog
@@ -41,6 +54,36 @@ export default function CustomerBilling() {
   const [items, setItems] = useState([]);
   const [discount, setDiscount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState('Cash');
+
+  // Payment Options Dialog state
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [selectedPaymentOption, setSelectedPaymentOption] = useState('upi_qr'); // 'upi_qr' | 'upi_id' | 'cash' | 'card' | 'khata'
+  const [customerUpiId, setCustomerUpiId] = useState('');
+  const [upiRefNumber, setUpiRefNumber] = useState('');
+  const [cashReceived, setCashReceived] = useState('');
+  const [cardLastFour, setCardLastFour] = useState('');
+  const [collectRequestSent, setCollectRequestSent] = useState(false);
+  const [upiCopied, setUpiCopied] = useState(false);
+
+  // Owner UPI ID & QR Code Management
+  const [isEditingOwnerUpi, setIsEditingOwnerUpi] = useState(false);
+  const [customOwnerUpi, setCustomOwnerUpi] = useState(owner?.upiId || 'anusabari273@okhdfcbank');
+  const [savingOwnerUpi, setSavingOwnerUpi] = useState(false);
+  const [qrMode, setQrMode] = useState('universal'); // 'universal' (safe for all apps) | 'amount_locked'
+  const [qrDisplaySource, setQrDisplaySource] = useState(owner?.upiQrImage ? 'uploaded' : 'generated');
+  const [showQrExplanation, setShowQrExplanation] = useState(false);
+  const [uploadingQrImage, setUploadingQrImage] = useState(false);
+  const qrFileInputRef = useRef(null);
+
+  // Synchronize state when owner updates
+  useEffect(() => {
+    if (owner?.upiId) {
+      setCustomOwnerUpi(owner.upiId);
+    }
+    if (owner?.upiQrImage) {
+      setQrDisplaySource('uploaded');
+    }
+  }, [owner?.upiId, owner?.upiQrImage]);
 
   // Voice recognition state
   const [isListening, setIsListening] = useState(false);
@@ -74,7 +117,13 @@ export default function CustomerBilling() {
   // Completed order & receipt modal
   const [completedOrder, setCompletedOrder] = useState(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
-  const [receiptPaperWidth, setReceiptPaperWidth] = useState('80mm'); // '58mm' | '80mm'
+  const [receiptPaperWidth, setReceiptPaperWidth] = useState(a11y?.defaultReceiptWidth || '80mm'); // '58mm' | '80mm'
+
+  useEffect(() => {
+    if (a11y?.defaultReceiptWidth) {
+      setReceiptPaperWidth(a11y.defaultReceiptWidth);
+    }
+  }, [a11y?.defaultReceiptWidth]);
 
   // Past orders drawer / modal
   const [showPastOrders, setShowPastOrders] = useState(false);
@@ -122,6 +171,90 @@ export default function CustomerBilling() {
   };
 
   // ----------------------------------------------------
+  // OWNER UPI & QR STANDEE HANDLERS
+  // ----------------------------------------------------
+  const handleSaveOwnerUpi = async (e) => {
+    if (e) e.preventDefault();
+    const cleanId = (customOwnerUpi || '').trim();
+    if (!cleanId || !cleanId.includes('@')) {
+      showToast('Please enter a valid UPI ID (e.g. yourname@okhdfcbank or 9876543210@paytm)', 'error');
+      playChime('warning');
+      return;
+    }
+    setSavingOwnerUpi(true);
+    try {
+      const res = await authAPI.updateSettings({ upiId: cleanId });
+      if (res.data?.owner) {
+        updateOwnerState(res.data.owner);
+      }
+      setIsEditingOwnerUpi(false);
+      showToast(`Owner UPI ID updated to "${cleanId}"!`, 'success');
+      playChime('success');
+      announce('Owner UPI ID updated');
+    } catch (err) {
+      showToast(err.response?.data?.message || err.message || 'Failed to update UPI ID', 'error');
+      playChime('warning');
+    } finally {
+      setSavingOwnerUpi(false);
+    }
+  };
+
+  const handleQrImageUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      showToast('Please select an image file (PNG, JPG, WEBP)', 'error');
+      return;
+    }
+
+    if (file.size > 8 * 1024 * 1024) {
+      showToast('Image size exceeds 8MB limit', 'error');
+      return;
+    }
+
+    setUploadingQrImage(true);
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const base64Data = event.target.result;
+      try {
+        const res = await authAPI.updateSettings({ upiQrImage: base64Data });
+        if (res.data?.owner) {
+          updateOwnerState(res.data.owner);
+        }
+        setQrDisplaySource('uploaded');
+        showToast('Shop Counter QR Standee uploaded successfully!', 'success');
+        playChime('success');
+      } catch (err) {
+        showToast(err.response?.data?.message || err.message || 'Failed to upload QR image', 'error');
+        playChime('warning');
+      } finally {
+        setUploadingQrImage(false);
+      }
+    };
+    reader.onerror = () => {
+      setUploadingQrImage(false);
+      showToast('Failed to read image file', 'error');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveQrImage = async () => {
+    if (!window.confirm('Remove custom QR standee image and switch back to generated QR?')) return;
+    try {
+      const res = await authAPI.updateSettings({ upiQrImage: '' });
+      if (res.data?.owner) {
+        updateOwnerState(res.data.owner);
+      }
+      setQrDisplaySource('generated');
+      showToast('Custom QR removed, switched to auto-generated QR', 'success');
+      playChime('success');
+    } catch (err) {
+      showToast(err.response?.data?.message || err.message || 'Failed to remove QR image', 'error');
+    }
+  };
+
+  // ----------------------------------------------------
   // VOICE ORDER PARSING
   // ----------------------------------------------------
   const toggleVoiceRecording = () => {
@@ -131,11 +264,8 @@ export default function CustomerBilling() {
     }
 
     if (isListening) {
-      speechService.stopListening();
+      speechService.finishListening();
       setIsListening(false);
-      if (transcript.trim()) {
-        handleProcessVoiceOrder(transcript.trim());
-      }
     } else {
       setTranscript('');
       setInterimText('');
@@ -143,7 +273,11 @@ export default function CustomerBilling() {
 
       speechService.startListening({
         lang: voiceLang,
-        onInterim: (text) => setInterimText(text),
+        silenceDelayMs: 2500,
+        onInterim: (interim, fullText) => {
+          setInterimText(interim);
+          setTranscript(fullText);
+        },
         onResult: (text) => {
           setTranscript(text);
           setIsListening(false);
@@ -432,6 +566,7 @@ export default function CustomerBilling() {
       lang: voiceLang,
       onResult: (text) => {
         setListeningForAnswer(false);
+        const clean = (text || '').toLowerCase().trim();
         const isYes =
           /^(yes|aam|ama|aama|sari|seri|correct|confirm|save|save pannu|kandippa|ok|okay|haan|theek hai)$/i.test(clean) ||
           clean.includes('save') || clean.includes('confirm') || clean.includes('sari') || clean.includes('seri') ||
@@ -442,7 +577,8 @@ export default function CustomerBilling() {
           clean.includes('cancel') || clean.includes('vendam') || clean.includes('வேண்டாம்') || clean.includes('இல்லை');
 
         if (isYes) {
-          executeSubmitOrder();
+          setConfirmModalOpen(false);
+          handleOpenPaymentModal();
         } else if (isNo) {
           setConfirmModalOpen(false);
           showToast('Order confirmation cancelled', 'info');
@@ -453,23 +589,114 @@ export default function CustomerBilling() {
     });
   };
 
+  const handleOpenPaymentModal = (defaultOption = 'upi_qr') => {
+    if (items.length === 0) {
+      showToast('Please add items to bill before confirming payment', 'warning');
+      return;
+    }
+
+    if (hasStockErrors) {
+      const firstError = outOfStockItems[0];
+      const msg = `${firstError.nameTamil || firstError.nameEnglish} stock-la ${firstError.currentStock} ${firstError.unit} mattum dhaan irukku!`;
+      showToast(msg, 'error');
+      if (ttsEnabled) {
+        speechService.speak(msg, voiceLang);
+      }
+      return;
+    }
+
+    setConfirmModalOpen(false);
+    setSelectedPaymentOption(defaultOption);
+    setCashReceived(grandTotal);
+    setCollectRequestSent(false);
+    setUpiRefNumber('');
+    setCustomerUpiId('');
+    setShowPaymentModal(true);
+
+    if (ttsEnabled) {
+      const prompt = voiceLang.startsWith('ta')
+        ? `மொத்த தொகை ரூபாய் ${grandTotal}. பணம் செலுத்தும் முறையை தேர்ந்தெடுக்கவும்: யுபிஐ ஸ்கேனர், யுபிஐ ஐடி, அல்லது ரொக்கம்?`
+        : `Total bill is ₹${grandTotal}. Please select payment option: UPI QR Scanner, UPI ID, or Cash.`;
+      speechService.speak(prompt, voiceLang);
+    }
+  };
+
+  const handleConfirmPayment = async (paymentDetails = {}) => {
+    // If Razorpay online gateway is chosen
+    if (paymentDetails.paymentMethod === 'Razorpay') {
+      setShowPaymentModal(false);
+      setSubmittingOrder(true);
+      try {
+        await processRazorpayPayment({
+          amount: grandTotal,
+          invoiceNumber: `INV-${Date.now().toString().slice(-4)}`,
+          customerName: customerName.trim() || 'Customer',
+          customerPhone: '',
+          shopName: owner?.shopName || 'Tamil Nadu Smart Grocery',
+          onSuccess: async (razorpayData) => {
+            await completeOrderCreation({
+              paymentMethod: 'Razorpay',
+              paymentStatus: 'Paid',
+              razorpayOrderId: razorpayData.razorpayOrderId,
+              razorpayPaymentId: razorpayData.razorpayPaymentId,
+              razorpaySignature: razorpayData.razorpaySignature
+            });
+          },
+          onError: (err) => {
+            playChime('warning');
+            showToast(`Razorpay Payment Failed: ${err.message || 'Cancelled'}`, 'error');
+            setSubmittingOrder(false);
+          },
+          onDismiss: () => {
+            setSubmittingOrder(false);
+            showToast('Razorpay payment cancelled by customer', 'info');
+          }
+        });
+      } catch (err) {
+        setSubmittingOrder(false);
+        showToast(err.message || 'Razorpay checkout error', 'error');
+      }
+      return;
+    }
+
+    setShowPaymentModal(false);
+    await completeOrderCreation(paymentDetails);
+  };
+
   const executeSubmitOrder = async () => {
+    // When direct submit is clicked, open payment options modal to choose payment mode
+    handleOpenPaymentModal();
+  };
+
+  const completeOrderCreation = async (paymentDetails = {}) => {
     setSubmittingOrder(true);
     speechService.stopListening();
     setListeningForAnswer(false);
 
     try {
+      const finalPaymentMethod = paymentDetails.paymentMethod || paymentMethod || 'Cash';
       const payload = {
         customerName: customerName.trim() || 'Customer',
         items: items.map(it => ({
           productId: it.productId,
           productName: it.productName,
+          nameTamil: it.nameTamil,
+          nameEnglish: it.nameEnglish,
+          displayName: it.displayName,
           quantity: it.quantity,
           unit: it.unit,
           unitPrice: it.unitPrice
         })),
         discount: numDiscount,
-        paymentMethod
+        paymentMethod: finalPaymentMethod,
+        paymentStatus: paymentDetails.paymentStatus || 'Paid',
+        paymentReference: paymentDetails.paymentReference || '',
+        upiId: paymentDetails.upiId || '',
+        amountReceived: Number(paymentDetails.amountReceived) || grandTotal,
+        changeReturned: Number(paymentDetails.changeReturned) || 0,
+        razorpayOrderId: paymentDetails.razorpayOrderId || '',
+        razorpayPaymentId: paymentDetails.razorpayPaymentId || '',
+        razorpaySignature: paymentDetails.razorpaySignature || ''
       };
 
       const res = await orderAPI.createOrder(payload);
@@ -477,30 +704,45 @@ export default function CustomerBilling() {
         const order = res.data.data;
         setCompletedOrder(order);
         setConfirmModalOpen(false);
+        setShowPaymentModal(false);
         setShowReceiptModal(true);
         setItems([]);
         setCustomerName('');
         setDiscount(0);
 
+        // Play tactile POS bell chime & announce
+        playChime('bell');
+        announce(`Invoice ${order.invoiceNumber} created. Total ₹${order.grandTotal}`);
+
         // Refresh products so updated stock levels show immediately
         fetchProducts();
 
+        if (a11y?.autoPrintReceipt) {
+          setTimeout(() => {
+            window.print();
+          }, 350);
+        }
+
         if (ttsEnabled) {
-          const successVoice = `Invoice ${order.invoiceNumber} created! Bill total ${order.grandTotal} rupees.`;
+          const successVoice = voiceLang.startsWith('ta')
+            ? `ரூபாய் ${order.grandTotal} ${finalPaymentMethod} முறையில் பெறப்பட்டது. பில் எண் ${order.invoiceNumber} தயாராகிவிட்டது!`
+            : `Payment of ${order.grandTotal} rupees received via ${finalPaymentMethod}! Invoice ${order.invoiceNumber} generated.`;
           speechService.speak(successVoice, voiceLang);
         }
       }
     } catch (err) {
+      playChime('warning');
       const errStock = err.response?.data?.stockErrors;
       if (errStock && errStock.length > 0) {
         const e = errStock[0];
         const errMsg = `${e.nameTamil || e.nameEnglish} stock-la ${e.available} ${e.unit} mattum dhaan irukku!`;
         showToast(errMsg, 'error');
+        announce(errMsg);
         if (ttsEnabled) speechService.speak(errMsg, voiceLang);
       } else {
         showToast(err.response?.data?.message || 'Error saving order', 'error');
+        announce(err.response?.data?.message || 'Error saving order');
       }
-      setConfirmModalOpen(false);
     } finally {
       setSubmittingOrder(false);
     }
@@ -916,9 +1158,10 @@ export default function CustomerBilling() {
                   style={{ fontWeight: '600', cursor: 'pointer' }}
                 >
                   <option value="Cash">💵 Cash (ரொக்கம்)</option>
-                  <option value="UPI">📱 UPI / GPay / PhonePe</option>
-                  <option value="Card">💳 Card</option>
-                  <option value="Other">Other</option>
+                  <option value="Razorpay">⚡ Razorpay (UPI QR, GPay, PhonePe, Card, NetBanking)</option>
+                  <option value="UPI">📱 Direct UPI / QR Scan</option>
+                  <option value="Card">💳 POS Card Machine</option>
+                  <option value="Other">Other / Credit (கடன்)</option>
                 </select>
               </div>
             </div>
@@ -1303,26 +1546,35 @@ export default function CustomerBilling() {
               </div>
             </div>
 
-            {/* Payment Mode Badge */}
-            <div style={{
-              marginTop: '16px',
-              padding: '10px 14px',
-              borderRadius: '8px',
-              backgroundColor: '#f8fafc',
-              border: '1px solid #e2e8f0',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              fontSize: '13px'
-            }}>
+            {/* Payment Mode Badge - Clickable to open payment selection */}
+            <div
+              onClick={() => handleOpenPaymentModal('upi_qr')}
+              style={{
+                marginTop: '16px',
+                padding: '10px 14px',
+                borderRadius: '8px',
+                backgroundColor: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                fontSize: '13px',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+              title="Click to choose payment options"
+            >
               <span style={{ color: '#64748b' }}>Payment Mode:</span>
-              <span style={{ fontWeight: '700', color: '#1e293b' }}>{paymentMethod}</span>
+              <span style={{ fontWeight: '700', color: '#2563eb', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span>{paymentMethod}</span>
+                <span style={{ fontSize: '11px', textDecoration: 'underline' }}>• Choose Option</span>
+              </span>
             </div>
 
             {/* Primary Action Buttons */}
             <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <button
-                onClick={handleOpenVoiceConfirm}
+                onClick={() => handleOpenPaymentModal('upi_qr')}
                 disabled={items.length === 0 || hasStockErrors}
                 className="btn-primary"
                 style={{
@@ -1331,17 +1583,21 @@ export default function CustomerBilling() {
                   fontSize: '15px',
                   fontWeight: '700',
                   borderRadius: '10px',
-                  background: hasStockErrors ? '#94a3b8' : 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-                  boxShadow: hasStockErrors ? 'none' : '0 4px 14px rgba(37, 99, 235, 0.3)'
+                  background: hasStockErrors ? '#94a3b8' : 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                  boxShadow: hasStockErrors ? 'none' : '0 4px 14px rgba(22, 163, 74, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px'
                 }}
               >
-                <Volume2 size={18} />
-                <span>Voice Confirm Bill (உறுதி செய்)</span>
+                <ShoppingBag size={18} />
+                <span>Confirm & Pay Bill (பணம் செலுத்து)</span>
               </button>
 
               <button
-                onClick={executeSubmitOrder}
-                disabled={items.length === 0 || hasStockErrors || submittingOrder}
+                onClick={handleOpenVoiceConfirm}
+                disabled={items.length === 0 || hasStockErrors}
                 style={{
                   width: '100%',
                   padding: '12px',
@@ -1349,12 +1605,17 @@ export default function CustomerBilling() {
                   fontWeight: '600',
                   borderRadius: '10px',
                   backgroundColor: '#ffffff',
-                  color: hasStockErrors ? '#94a3b8' : '#334155',
-                  border: '1px solid #cbd5e1',
-                  cursor: hasStockErrors ? 'not-allowed' : 'pointer'
+                  color: hasStockErrors ? '#94a3b8' : '#2563eb',
+                  border: '1.5px solid #bfdbfe',
+                  cursor: hasStockErrors ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px'
                 }}
               >
-                {submittingOrder ? 'Generating Bill...' : 'Direct Print & Save Bill'}
+                <Volume2 size={17} />
+                <span>Voice Confirm Bill (குரல் உறுதி செய்)</span>
               </button>
             </div>
 
@@ -1471,6 +1732,1313 @@ export default function CustomerBilling() {
               >
                 {submittingOrder ? 'Saving...' : 'Confirm Bill (ஆம் / சேமி)'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------------------------------------------------- */}
+      {/* PAYMENT OPTIONS MODAL (UPI SCANNER / UPI ID / CASH / CARD) */}
+      {/* ---------------------------------------------------- */}
+      {showPaymentModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 9999,
+          backgroundColor: 'rgba(15, 23, 42, 0.75)',
+          backdropFilter: 'blur(6px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px'
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '24px',
+            width: '100%',
+            maxWidth: '560px',
+            maxHeight: '92vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+            border: '1px solid #e2e8f0',
+            overflow: 'hidden'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: '20px 24px',
+              borderBottom: '1px solid #e2e8f0',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              backgroundColor: '#f8fafc'
+            }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+                    Select Payment Option
+                  </h3>
+                  <span style={{ fontSize: '12px', color: '#16a34a', backgroundColor: '#dcfce7', padding: '2px 8px', borderRadius: '6px', fontWeight: '700' }}>
+                    பணம் செலுத்து
+                  </span>
+                </div>
+                <div style={{ fontSize: '12.5px', color: '#64748b', marginTop: '2px' }}>
+                  Customer: <strong>{customerName || 'Walk-in Customer'}</strong> • {items.length} items
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600' }}>Total Due</div>
+                  <div style={{ fontSize: '20px', fontWeight: '900', color: '#2563eb', lineHeight: '1.1' }}>
+                    ₹{grandTotal.toFixed(2)}
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setShowPaymentModal(false)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#94a3b8',
+                    cursor: 'pointer',
+                    padding: '6px',
+                    borderRadius: '50%',
+                    display: 'flex'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e2e8f0'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* Payment Method Selector Tabs */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(5, 1fr)',
+              gap: '6px',
+              padding: '12px 16px',
+              backgroundColor: '#f1f5f9',
+              borderBottom: '1px solid #e2e8f0'
+            }}>
+              {/* Tab 1: UPI QR Scanner */}
+              <button
+                type="button"
+                onClick={() => setSelectedPaymentOption('upi_qr')}
+                style={{
+                  padding: '10px 4px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  backgroundColor: selectedPaymentOption === 'upi_qr' ? '#ffffff' : 'transparent',
+                  color: selectedPaymentOption === 'upi_qr' ? '#2563eb' : '#64748b',
+                  fontWeight: selectedPaymentOption === 'upi_qr' ? '700' : '600',
+                  boxShadow: selectedPaymentOption === 'upi_qr' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontSize: '11px',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <QrCode size={18} />
+                <span>UPI Scanner</span>
+              </button>
+
+              {/* Tab 2: UPI ID */}
+              <button
+                type="button"
+                onClick={() => setSelectedPaymentOption('upi_id')}
+                style={{
+                  padding: '10px 4px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  backgroundColor: selectedPaymentOption === 'upi_id' ? '#ffffff' : 'transparent',
+                  color: selectedPaymentOption === 'upi_id' ? '#2563eb' : '#64748b',
+                  fontWeight: selectedPaymentOption === 'upi_id' ? '700' : '600',
+                  boxShadow: selectedPaymentOption === 'upi_id' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontSize: '11px',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <Smartphone size={18} />
+                <span>UPI ID</span>
+              </button>
+
+              {/* Tab 3: Cash */}
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedPaymentOption('cash');
+                  if (!cashReceived) setCashReceived(grandTotal);
+                }}
+                style={{
+                  padding: '10px 4px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  backgroundColor: selectedPaymentOption === 'cash' ? '#ffffff' : 'transparent',
+                  color: selectedPaymentOption === 'cash' ? '#16a34a' : '#64748b',
+                  fontWeight: selectedPaymentOption === 'cash' ? '700' : '600',
+                  boxShadow: selectedPaymentOption === 'cash' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontSize: '11px',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <Banknote size={18} />
+                <span>Cash</span>
+              </button>
+
+              {/* Tab 4: Card / Online */}
+              <button
+                type="button"
+                onClick={() => setSelectedPaymentOption('card')}
+                style={{
+                  padding: '10px 4px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  backgroundColor: selectedPaymentOption === 'card' ? '#ffffff' : 'transparent',
+                  color: selectedPaymentOption === 'card' ? '#7c3aed' : '#64748b',
+                  fontWeight: selectedPaymentOption === 'card' ? '700' : '600',
+                  boxShadow: selectedPaymentOption === 'card' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontSize: '11px',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <CreditCard size={18} />
+                <span>Card / Pay</span>
+              </button>
+
+              {/* Tab 5: Khata / Credit */}
+              <button
+                type="button"
+                onClick={() => setSelectedPaymentOption('khata')}
+                style={{
+                  padding: '10px 4px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  backgroundColor: selectedPaymentOption === 'khata' ? '#ffffff' : 'transparent',
+                  color: selectedPaymentOption === 'khata' ? '#ea580c' : '#64748b',
+                  fontWeight: selectedPaymentOption === 'khata' ? '700' : '600',
+                  boxShadow: selectedPaymentOption === 'khata' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontSize: '11px',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <FileText size={18} />
+                <span>Khata / கடன்</span>
+              </button>
+            </div>
+
+            {/* Modal Body: Active Tab Content */}
+            <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
+              {/* ---------------------------------------------------- */}
+              {/* TAB 1: UPI QR SCANNER */}
+              {/* ---------------------------------------------------- */}
+              {selectedPaymentOption === 'upi_qr' && (
+                <div style={{ textAlign: 'center' }}>
+                  {/* Standee vs Generated QR Tab / Switcher if standee exists */}
+                  {owner?.upiQrImage ? (
+                    <div style={{
+                      display: 'inline-flex',
+                      backgroundColor: '#f1f5f9',
+                      padding: '4px',
+                      borderRadius: '10px',
+                      marginBottom: '14px',
+                      gap: '4px',
+                      border: '1px solid #e2e8f0'
+                    }}>
+                      <button
+                        type="button"
+                        onClick={() => setQrDisplaySource('uploaded')}
+                        style={{
+                          padding: '6px 14px',
+                          borderRadius: '7px',
+                          border: 'none',
+                          backgroundColor: qrDisplaySource === 'uploaded' ? '#2563eb' : 'transparent',
+                          color: qrDisplaySource === 'uploaded' ? '#ffffff' : '#64748b',
+                          fontSize: '12px',
+                          fontWeight: '700',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <ImageIcon size={14} />
+                        <span>My Official Shop Standee QR</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setQrDisplaySource('generated')}
+                        style={{
+                          padding: '6px 14px',
+                          borderRadius: '7px',
+                          border: 'none',
+                          backgroundColor: qrDisplaySource === 'generated' ? '#2563eb' : 'transparent',
+                          color: qrDisplaySource === 'generated' ? '#ffffff' : '#64748b',
+                          fontSize: '12px',
+                          fontWeight: '700',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <QrCode size={14} />
+                        <span>Dynamic Live UPI QR</span>
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {/* Official Razorpay Dynamic UPI QR Launcher Card */}
+                  <div style={{
+                    maxWidth: '380px',
+                    margin: '0 auto 16px auto',
+                    padding: '12px 16px',
+                    backgroundColor: '#faf5ff',
+                    border: '1.5px solid #d8b4fe',
+                    borderRadius: '14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px',
+                    textAlign: 'left',
+                    boxShadow: '0 2px 10px rgba(124, 58, 237, 0.08)'
+                  }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '13px', fontWeight: '800', color: '#581c87' }}>
+                          ⚡ Official Razorpay UPI QR
+                        </span>
+                        <span style={{ fontSize: '10px', fontWeight: '800', backgroundColor: '#7c3aed', color: '#ffffff', padding: '1px 6px', borderRadius: '4px' }}>
+                          VERIFIED
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#6b21a8', marginTop: '2px' }}>
+                        Generates a certified UPI QR code. Valid on GPay, PhonePe, Paytm with auto-verification!
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={submittingOrder}
+                      onClick={() => handleConfirmPayment({ paymentMethod: 'Razorpay' })}
+                      style={{
+                        backgroundColor: '#7c3aed',
+                        color: '#ffffff',
+                        border: 'none',
+                        padding: '9px 14px',
+                        borderRadius: '9px',
+                        fontSize: '12px',
+                        fontWeight: '800',
+                        cursor: submittingOrder ? 'not-allowed' : 'pointer',
+                        whiteSpace: 'nowrap',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        boxShadow: '0 2px 8px rgba(124, 58, 237, 0.25)',
+                        transition: 'all 0.15s ease'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#6d28d9'}
+                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#7c3aed'}
+                    >
+                      <ExternalLink size={14} />
+                      <span>Launch QR</span>
+                    </button>
+                  </div>
+
+                  {/* QR Card Container */}
+                  <div style={{
+                    display: 'inline-block',
+                    padding: '16px',
+                    backgroundColor: '#ffffff',
+                    border: '2px solid #2563eb',
+                    borderRadius: '20px',
+                    boxShadow: '0 8px 30px rgba(37, 99, 235, 0.14)',
+                    marginBottom: '14px',
+                    position: 'relative',
+                    maxWidth: '280px'
+                  }}>
+                    {/* Badge on top */}
+                    <div style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      padding: '3px 10px',
+                      borderRadius: '9999px',
+                      backgroundColor: '#ecfdf5',
+                      border: '1px solid #a7f3d0',
+                      color: '#059669',
+                      fontSize: '11px',
+                      fontWeight: '800',
+                      marginBottom: '10px'
+                    }}>
+                      <ShieldCheck size={13} />
+                      <span>{qrDisplaySource === 'uploaded' && owner?.upiQrImage ? 'STORE STANDEE VERIFIED' : 'NPCI UNIVERSAL UPI READY'}</span>
+                    </div>
+
+                    {/* QR Display: Uploaded vs Generated */}
+                    {qrDisplaySource === 'uploaded' && owner?.upiQrImage ? (
+                      <div style={{ position: 'relative' }}>
+                        <img
+                          src={owner.upiQrImage}
+                          alt="Store Counter Standee QR Code"
+                          style={{
+                            width: '210px',
+                            height: '210px',
+                            objectFit: 'contain',
+                            display: 'block',
+                            margin: '0 auto',
+                            borderRadius: '12px',
+                            border: '1px solid #e2e8f0'
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <div style={{ position: 'relative' }}>
+                        <img
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(
+                            qrMode === 'amount_locked'
+                              ? `upi://pay?pa=${encodeURIComponent(owner?.upiId || 'anusabari273@okhdfcbank')}&pn=${encodeURIComponent((owner?.shopName || 'Smart Grocery').replace(/[^a-zA-Z0-9 ]/g, '').trim())}&am=${grandTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent('Bill ' + Date.now().toString().slice(-4))}`
+                              : `upi://pay?pa=${encodeURIComponent(owner?.upiId || 'anusabari273@okhdfcbank')}&pn=${encodeURIComponent((owner?.shopName || 'Smart Grocery').replace(/[^a-zA-Z0-9 ]/g, '').trim())}&cu=INR`
+                          )}&margin=8`}
+                          alt="Universal UPI Payment QR Code"
+                          style={{
+                            width: '210px',
+                            height: '210px',
+                            display: 'block',
+                            margin: '0 auto',
+                            borderRadius: '12px'
+                          }}
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                            if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex';
+                          }}
+                        />
+                        <div style={{
+                          display: 'none',
+                          width: '210px',
+                          height: '210px',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          backgroundColor: '#f8fafc',
+                          borderRadius: '12px',
+                          color: '#2563eb',
+                          margin: '0 auto'
+                        }}>
+                          <QrCode size={64} />
+                          <span style={{ fontSize: '12px', fontWeight: '700', marginTop: '8px' }}>
+                            UPI QR Ready
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Amount to pay banner */}
+                    <div style={{
+                      marginTop: '10px',
+                      padding: '6px 10px',
+                      backgroundColor: '#f0fdf4',
+                      borderRadius: '8px',
+                      border: '1px solid #bbf7d0'
+                    }}>
+                      <div style={{ fontSize: '11px', fontWeight: '700', color: '#15803d' }}>
+                        SCAN WITH ANY APP & PAY
+                      </div>
+                      <div style={{ fontSize: '18px', fontWeight: '900', color: '#16a34a' }}>
+                        ₹{grandTotal.toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* UPI Apps Supported Pills */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    marginBottom: '12px',
+                    flexWrap: 'wrap'
+                  }}>
+                    <span style={{ fontSize: '11px', fontWeight: '700', color: '#334155', backgroundColor: '#f1f5f9', padding: '3px 8px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                      Google Pay
+                    </span>
+                    <span style={{ fontSize: '11px', fontWeight: '700', color: '#334155', backgroundColor: '#f1f5f9', padding: '3px 8px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                      PhonePe
+                    </span>
+                    <span style={{ fontSize: '11px', fontWeight: '700', color: '#334155', backgroundColor: '#f1f5f9', padding: '3px 8px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                      Paytm
+                    </span>
+                    <span style={{ fontSize: '11px', fontWeight: '700', color: '#334155', backgroundColor: '#f1f5f9', padding: '3px 8px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                      BHIM UPI
+                    </span>
+                    <span style={{ fontSize: '11px', fontWeight: '700', color: '#334155', backgroundColor: '#f1f5f9', padding: '3px 8px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                      CRED / Bank
+                    </span>
+                  </div>
+
+                  {/* QR Mode Switcher (Universal vs Amount-Locked) */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '12px',
+                    fontSize: '11.5px',
+                    color: '#475569',
+                    marginBottom: '14px',
+                    flexWrap: 'wrap'
+                  }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', fontWeight: qrMode === 'universal' ? '700' : '500', color: qrMode === 'universal' ? '#2563eb' : '#64748b' }}>
+                      <input
+                        type="radio"
+                        name="qrModeChoice"
+                        checked={qrMode === 'universal'}
+                        onChange={() => setQrMode('universal')}
+                      />
+                      <span>Universal Mode (Recommended - All Apps)</span>
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', fontWeight: qrMode === 'amount_locked' ? '700' : '500', color: qrMode === 'amount_locked' ? '#2563eb' : '#64748b' }}>
+                      <input
+                        type="radio"
+                        name="qrModeChoice"
+                        checked={qrMode === 'amount_locked'}
+                        onChange={() => setQrMode('amount_locked')}
+                      />
+                      <span>Lock Bill Amount (Merchant Only)</span>
+                    </label>
+                  </div>
+
+                  {/* Hidden File Input for Standee QR Upload */}
+                  <input
+                    type="file"
+                    ref={qrFileInputRef}
+                    onChange={handleQrImageUpload}
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                  />
+
+                  {/* Owner UPI ID / Code Card with Edit and Standee Upload */}
+                  <div style={{
+                    backgroundColor: '#eff6ff',
+                    border: '1.5px solid #bfdbfe',
+                    borderRadius: '12px',
+                    padding: '12px 14px',
+                    marginBottom: '14px',
+                    textAlign: 'left'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                      <div>
+                        <div style={{ fontSize: '11px', fontWeight: '700', color: '#1e40af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          Store Owner Code (UPI ID)
+                        </div>
+                        <div style={{ fontSize: '14px', fontWeight: '800', color: '#1e3a8a', marginTop: '2px' }}>
+                          {owner?.upiId || 'anusabari273@okhdfcbank'}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                        {/* Copy Button */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const upi = owner?.upiId || 'anusabari273@okhdfcbank';
+                            navigator.clipboard?.writeText(upi);
+                            setUpiCopied(true);
+                            showToast(`Copied UPI ID "${upi}"!`, 'success');
+                            setTimeout(() => setUpiCopied(false), 2500);
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            border: '1px solid #bfdbfe',
+                            background: '#ffffff',
+                            color: '#2563eb',
+                            padding: '5px 9px',
+                            borderRadius: '7px',
+                            fontSize: '11px',
+                            fontWeight: '700',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {upiCopied ? <Check size={13} color="#16a34a" /> : <Copy size={13} />}
+                          <span>{upiCopied ? 'Copied' : 'Copy'}</span>
+                        </button>
+
+                        {/* Edit Owner Code Button */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCustomOwnerUpi(owner?.upiId || 'anusabari273@okhdfcbank');
+                            setIsEditingOwnerUpi(!isEditingOwnerUpi);
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            border: '1px solid #2563eb',
+                            background: isEditingOwnerUpi ? '#2563eb' : '#ffffff',
+                            color: isEditingOwnerUpi ? '#ffffff' : '#2563eb',
+                            padding: '5px 9px',
+                            borderRadius: '7px',
+                            fontSize: '11px',
+                            fontWeight: '700',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <Edit2 size={13} />
+                          <span>{isEditingOwnerUpi ? 'Close' : 'Edit Owner Code'}</span>
+                        </button>
+
+                        {/* Upload Standee Photo Button */}
+                        <button
+                          type="button"
+                          onClick={() => qrFileInputRef.current?.click()}
+                          disabled={uploadingQrImage}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            border: '1px solid #10b981',
+                            background: '#ecfdf5',
+                            color: '#059669',
+                            padding: '5px 9px',
+                            borderRadius: '7px',
+                            fontSize: '11px',
+                            fontWeight: '700',
+                            cursor: uploadingQrImage ? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          <Upload size={13} />
+                          <span>{uploadingQrImage ? 'Uploading...' : (owner?.upiQrImage ? 'Replace Standee' : 'Upload Standee QR')}</span>
+                        </button>
+
+                        {owner?.upiQrImage && (
+                          <button
+                            type="button"
+                            onClick={handleRemoveQrImage}
+                            title="Remove uploaded standee image"
+                            style={{
+                              border: '1px solid #fecaca',
+                              background: '#fff1f2',
+                              color: '#e11d48',
+                              padding: '5px 8px',
+                              borderRadius: '7px',
+                              fontSize: '11px',
+                              fontWeight: '700',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Inline Owner Code Editor */}
+                    {isEditingOwnerUpi && (
+                      <form onSubmit={handleSaveOwnerUpi} style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px dashed #bfdbfe' }}>
+                        <label style={{ display: 'block', fontSize: '11.5px', fontWeight: '700', color: '#1e40af', marginBottom: '4px' }}>
+                          Enter Your Shop Owner UPI ID / VPA:
+                        </label>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <input
+                            type="text"
+                            value={customOwnerUpi}
+                            onChange={(e) => setCustomOwnerUpi(e.target.value)}
+                            placeholder="e.g. anusabari273@okhdfcbank or 9876543210@paytm"
+                            style={{
+                              flex: 1,
+                              padding: '7px 10px',
+                              borderRadius: '7px',
+                              border: '1.5px solid #2563eb',
+                              fontSize: '13px',
+                              fontWeight: '700',
+                              color: '#1e3a8a'
+                            }}
+                          />
+                          <button
+                            type="submit"
+                            disabled={savingOwnerUpi}
+                            style={{
+                              padding: '7px 14px',
+                              backgroundColor: '#2563eb',
+                              color: '#ffffff',
+                              border: 'none',
+                              borderRadius: '7px',
+                              fontSize: '12px',
+                              fontWeight: '700',
+                              cursor: savingOwnerUpi ? 'not-allowed' : 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            <CheckCheck size={14} />
+                            <span>{savingOwnerUpi ? 'Saving...' : 'Save & Update'}</span>
+                          </button>
+                        </div>
+
+                        {/* Quick Handle Suggestions */}
+                        <div style={{ display: 'flex', gap: '5px', marginTop: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                          <span style={{ fontSize: '10.5px', color: '#64748b' }}>Quick handles:</span>
+                          {['@okhdfcbank', '@oksbi', '@okaxis', '@okicici', '@paytm', '@ybl'].map((h) => (
+                            <button
+                              key={h}
+                              type="button"
+                              onClick={() => {
+                                const base = customOwnerUpi.includes('@') ? customOwnerUpi.split('@')[0] : customOwnerUpi;
+                                setCustomOwnerUpi((base || 'yourname') + h);
+                              }}
+                              style={{
+                                fontSize: '10px',
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                border: '1px solid #cbd5e1',
+                                background: '#ffffff',
+                                color: '#475569',
+                                cursor: 'pointer',
+                                fontWeight: '600'
+                              }}
+                            >
+                              {h}
+                            </button>
+                          ))}
+                        </div>
+                      </form>
+                    )}
+                  </div>
+
+                  {/* Why was my QR invalid? Explainer Card */}
+                  <div style={{
+                    backgroundColor: '#fffbeb',
+                    border: '1px solid #fef3c7',
+                    borderRadius: '10px',
+                    padding: '8px 12px',
+                    marginBottom: '16px',
+                    textAlign: 'left'
+                  }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowQrExplanation(!showQrExplanation)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        width: '100%',
+                        cursor: 'pointer',
+                        color: '#b45309',
+                        fontSize: '11.5px',
+                        fontWeight: '700'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Info size={14} />
+                        <span>Why did Google Pay or PhonePe show "QR code is invalid"?</span>
+                      </div>
+                      <span style={{ fontSize: '13px' }}>{showQrExplanation ? '▲' : '▼'}</span>
+                    </button>
+
+                    {showQrExplanation && (
+                      <div style={{ marginTop: '8px', fontSize: '11px', color: '#92400e', lineHeight: '1.5' }}>
+                        <p style={{ margin: '0 0 6px 0' }}>
+                          <strong>NPCI Banking Security Rule:</strong> Personal UPI accounts (such as <code>@okhdfcbank</code>, <code>@oksbi</code>, <code>@okaxis</code>) are classified as individual accounts. When an amount (e.g. ₹488) is hardcoded into the QR for a personal account, Google Pay and PhonePe automatically reject it as "invalid QR" because individual accounts cannot act as merchant terminals.
+                        </p>
+                        <p style={{ margin: 0 }}>
+                          <strong>The Solutions:</strong>
+                          <br />
+                          1. <strong>⚡ Razorpay Dynamic QR (Above):</strong> Click the violet <strong>"Launch QR"</strong> button above to open Razorpay's official merchant gateway with a certified QR code. Works on all UPI apps with automatic payment verification!
+                          <br />
+                          2. <strong>Upload Standee QR:</strong> Take a photo of your physical Google Pay / PhonePe counter standee and upload it.
+                          <br />
+                          3. <strong>Universal Mode:</strong> Generates a clean UPI link without amount locks so PhonePe & GPay won't reject it.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Optional UPI Ref / UTR number input */}
+                  <div style={{ textAlign: 'left', marginBottom: '18px' }}>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                      UPI UTR / Reference No. (Optional):
+                    </label>
+                    <input
+                      type="text"
+                      value={upiRefNumber}
+                      onChange={(e) => setUpiRefNumber(e.target.value)}
+                      placeholder="e.g. 408271892831 or Last 4 digits"
+                      style={{
+                        width: '100%',
+                        padding: '9px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid #cbd5e1',
+                        fontSize: '13px',
+                        color: '#1e293b'
+                      }}
+                    />
+                  </div>
+
+                  {/* Primary Confirm Button */}
+                  <button
+                    type="button"
+                    disabled={submittingOrder}
+                    onClick={() => handleConfirmPayment({
+                      paymentMethod: 'UPI - QR Scanner',
+                      paymentStatus: 'Paid',
+                      paymentReference: upiRefNumber.trim() || `UPI-QR-${Date.now().toString().slice(-6)}`,
+                      upiId: owner?.upiId || 'anusabari273@okhdfcbank'
+                    })}
+                    style={{
+                      width: '100%',
+                      backgroundColor: '#16a34a',
+                      color: '#ffffff',
+                      border: 'none',
+                      padding: '14px',
+                      borderRadius: '12px',
+                      fontSize: '15px',
+                      fontWeight: '800',
+                      cursor: submittingOrder ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      boxShadow: '0 4px 14px rgba(22, 163, 74, 0.3)',
+                      transition: 'all 0.15s ease'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#15803d'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#16a34a'}
+                  >
+                    <CheckCircle2 size={18} />
+                    <span>{submittingOrder ? 'Processing...' : `Payment Received via Scanner (₹${grandTotal.toFixed(2)})`}</span>
+                  </button>
+                </div>
+              )}
+
+              {/* ---------------------------------------------------- */}
+              {/* TAB 2: UPI ID (COLLECT REQUEST) */}
+              {/* ---------------------------------------------------- */}
+              {selectedPaymentOption === 'upi_id' && (
+                <div>
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>
+                      Customer UPI ID / VPA (வாடிக்கையாளர் UPI):
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <Smartphone size={16} color="#94a3b8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                      <input
+                        type="text"
+                        value={customerUpiId}
+                        onChange={(e) => {
+                          setCustomerUpiId(e.target.value);
+                          setCollectRequestSent(false);
+                        }}
+                        placeholder="e.g. mobile@paytm or name@okaxis"
+                        style={{
+                          width: '100%',
+                          padding: '11px 14px 11px 36px',
+                          borderRadius: '10px',
+                          border: '1px solid #cbd5e1',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          color: '#1e293b'
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Quick Suffix Chips */}
+                  <div style={{ marginBottom: '18px' }}>
+                    <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600', marginBottom: '6px' }}>
+                      Quick Handlers:
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      {['@okaxis', '@okhdfcbank', '@paytm', '@ybl', '@upi', '@ibl'].map((suffix) => (
+                        <button
+                          key={suffix}
+                          type="button"
+                          onClick={() => {
+                            const base = customerUpiId.includes('@') ? customerUpiId.split('@')[0] : customerUpiId;
+                            setCustomerUpiId((base || 'customer') + suffix);
+                          }}
+                          style={{
+                            padding: '4px 8px',
+                            borderRadius: '6px',
+                            border: '1px solid #cbd5e1',
+                            backgroundColor: '#f8fafc',
+                            fontSize: '11px',
+                            fontWeight: '600',
+                            color: '#334155',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {suffix}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Send Collect Request Button */}
+                  <button
+                    type="button"
+                    disabled={!customerUpiId || !customerUpiId.includes('@')}
+                    onClick={() => {
+                      setCollectRequestSent(true);
+                      showToast(`Payment request of ₹${grandTotal} sent to ${customerUpiId}!`, 'success');
+                      if (ttsEnabled) {
+                        speechService.speak(`Payment request of ₹${grandTotal} sent to ${customerUpiId}`, voiceLang);
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '11px',
+                      borderRadius: '10px',
+                      border: '1px solid #2563eb',
+                      backgroundColor: '#eff6ff',
+                      color: '#2563eb',
+                      fontSize: '13.5px',
+                      fontWeight: '700',
+                      cursor: (!customerUpiId || !customerUpiId.includes('@')) ? 'not-allowed' : 'pointer',
+                      opacity: (!customerUpiId || !customerUpiId.includes('@')) ? 0.5 : 1,
+                      marginBottom: '16px'
+                    }}
+                  >
+                    📲 Send UPI Collect Request (பணம் கோரு)
+                  </button>
+
+                  {/* Collect Request Status Banner */}
+                  {collectRequestSent && (
+                    <div style={{
+                      padding: '14px',
+                      borderRadius: '12px',
+                      backgroundColor: '#f0fdf4',
+                      border: '1.5px solid #86efac',
+                      marginBottom: '18px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px'
+                    }}>
+                      <div style={{
+                        width: '10px',
+                        height: '10px',
+                        borderRadius: '50%',
+                        backgroundColor: '#16a34a',
+                        boxShadow: '0 0 0 4px rgba(22, 163, 74, 0.2)'
+                      }} />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '13px', fontWeight: '700', color: '#15803d' }}>
+                          Collect Request Sent to {customerUpiId}
+                        </div>
+                        <div style={{ fontSize: '11.5px', color: '#166534', marginTop: '2px' }}>
+                          Customer will approve the ₹{grandTotal.toFixed(2)} payment in their UPI app.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Primary Confirm Button */}
+                  <button
+                    type="button"
+                    disabled={submittingOrder}
+                    onClick={() => handleConfirmPayment({
+                      paymentMethod: 'UPI - ID',
+                      paymentStatus: 'Paid',
+                      paymentReference: `COLLECT-${Date.now().toString().slice(-6)}`,
+                      upiId: customerUpiId.trim() || 'customer@upi'
+                    })}
+                    style={{
+                      width: '100%',
+                      backgroundColor: '#16a34a',
+                      color: '#ffffff',
+                      border: 'none',
+                      padding: '14px',
+                      borderRadius: '12px',
+                      fontSize: '15px',
+                      fontWeight: '800',
+                      cursor: submittingOrder ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      boxShadow: '0 4px 14px rgba(22, 163, 74, 0.3)'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#15803d'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#16a34a'}
+                  >
+                    <CheckCircle2 size={18} />
+                    <span>{submittingOrder ? 'Processing...' : `Confirm UPI Payment Received (₹${grandTotal.toFixed(2)})`}</span>
+                  </button>
+                </div>
+              )}
+
+              {/* ---------------------------------------------------- */}
+              {/* TAB 3: CASH PAYMENT */}
+              {/* ---------------------------------------------------- */}
+              {selectedPaymentOption === 'cash' && (
+                <div>
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '14px',
+                    borderRadius: '12px',
+                    backgroundColor: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    marginBottom: '16px'
+                  }}>
+                    <div>
+                      <div style={{ fontSize: '12px', color: '#64748b', fontWeight: '600' }}>Grand Total Due</div>
+                      <div style={{ fontSize: '24px', fontWeight: '900', color: '#0f172a' }}>
+                        ₹{grandTotal.toFixed(2)}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: '12px', fontWeight: '700', color: '#16a34a', backgroundColor: '#dcfce7', padding: '4px 10px', borderRadius: '8px' }}>
+                      Cash Sale / ரொக்கம்
+                    </span>
+                  </div>
+
+                  {/* Cash Received Input */}
+                  <div style={{ marginBottom: '14px' }}>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>
+                      Cash Received from Customer (பெற்ற தொகை):
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', fontWeight: '700', color: '#64748b' }}>₹</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={cashReceived}
+                        onChange={(e) => setCashReceived(e.target.value)}
+                        placeholder={grandTotal.toString()}
+                        autoFocus
+                        style={{
+                          width: '100%',
+                          padding: '12px 14px 12px 34px',
+                          borderRadius: '10px',
+                          border: '2px solid #3b82f6',
+                          fontSize: '18px',
+                          fontWeight: '800',
+                          color: '#1e293b',
+                          outline: 'none'
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Quick Preset Cash Chips */}
+                  <div style={{ marginBottom: '18px' }}>
+                    <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600', marginBottom: '6px' }}>
+                      Quick Amounts:
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      {[
+                        { label: 'Exact', val: grandTotal },
+                        { label: `₹${Math.ceil(grandTotal / 50) * 50 || grandTotal}`, val: Math.ceil(grandTotal / 50) * 50 || grandTotal },
+                        { label: `₹${Math.ceil(grandTotal / 100) * 100 || grandTotal}`, val: Math.ceil(grandTotal / 100) * 100 || grandTotal },
+                        { label: '₹500', val: 500 },
+                        { label: '₹1000', val: 1000 },
+                        { label: '₹2000', val: 2000 }
+                      ]
+                        .filter((item, idx, arr) => arr.findIndex(x => x.val === item.val) === idx && item.val >= grandTotal)
+                        .slice(0, 5)
+                        .map((preset, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => setCashReceived(preset.val)}
+                            style={{
+                              padding: '6px 12px',
+                              borderRadius: '8px',
+                              border: Number(cashReceived) === preset.val ? '1.5px solid #2563eb' : '1px solid #cbd5e1',
+                              backgroundColor: Number(cashReceived) === preset.val ? '#eff6ff' : '#ffffff',
+                              color: Number(cashReceived) === preset.val ? '#2563eb' : '#334155',
+                              fontSize: '12px',
+                              fontWeight: '700',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+
+                  {/* Return Change Calculation Banner */}
+                  {Number(cashReceived) >= grandTotal ? (
+                    <div style={{
+                      padding: '14px 18px',
+                      borderRadius: '12px',
+                      backgroundColor: '#f0fdf4',
+                      border: '1.5px solid #86efac',
+                      marginBottom: '20px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}>
+                      <div>
+                        <div style={{ fontSize: '12px', fontWeight: '700', color: '#166534' }}>
+                          Change to Return (மீதி சில்லறை)
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#4b5563' }}>
+                          Customer tender: ₹{Number(cashReceived).toFixed(2)}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: '24px', fontWeight: '900', color: '#15803d' }}>
+                        ₹{(Number(cashReceived) - grandTotal).toFixed(2)}
+                      </div>
+                    </div>
+                  ) : Number(cashReceived) > 0 ? (
+                    <div style={{
+                      padding: '12px 16px',
+                      borderRadius: '10px',
+                      backgroundColor: '#fef2f2',
+                      border: '1px solid #fecaca',
+                      color: '#dc2626',
+                      marginBottom: '20px',
+                      fontSize: '13px',
+                      fontWeight: '700',
+                      display: 'flex',
+                      justifyContent: 'space-between'
+                    }}>
+                      <span>Remaining Balance Due:</span>
+                      <span>₹{(grandTotal - Number(cashReceived)).toFixed(2)}</span>
+                    </div>
+                  ) : null}
+
+                  {/* Primary Confirm Button */}
+                  <button
+                    type="button"
+                    disabled={submittingOrder}
+                    onClick={() => handleConfirmPayment({
+                      paymentMethod: 'Cash',
+                      paymentStatus: 'Paid',
+                      amountReceived: Number(cashReceived) || grandTotal,
+                      changeReturned: Math.max(0, (Number(cashReceived) || grandTotal) - grandTotal)
+                    })}
+                    style={{
+                      width: '100%',
+                      backgroundColor: '#16a34a',
+                      color: '#ffffff',
+                      border: 'none',
+                      padding: '14px',
+                      borderRadius: '12px',
+                      fontSize: '15px',
+                      fontWeight: '800',
+                      cursor: submittingOrder ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      boxShadow: '0 4px 14px rgba(22, 163, 74, 0.3)'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#15803d'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#16a34a'}
+                  >
+                    <CheckCircle2 size={18} />
+                    <span>{submittingOrder ? 'Processing...' : `Accept Cash & Complete Bill (₹${grandTotal.toFixed(2)})`}</span>
+                  </button>
+                </div>
+              )}
+
+              {/* ---------------------------------------------------- */}
+              {/* TAB 4: CARD / RAZORPAY GATEWAY */}
+              {/* ---------------------------------------------------- */}
+              {selectedPaymentOption === 'card' && (
+                <div>
+                  <div style={{
+                    padding: '16px',
+                    borderRadius: '14px',
+                    backgroundColor: '#faf5ff',
+                    border: '1.5px solid #d8b4fe',
+                    marginBottom: '18px'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      <CreditCard size={20} color="#7c3aed" />
+                      <div style={{ fontSize: '14px', fontWeight: '800', color: '#581c87' }}>
+                        Razorpay Online Gateway & Card Payment
+                      </div>
+                    </div>
+                    <p style={{ fontSize: '12.5px', color: '#6b21a8', margin: '0 0 14px 0', lineHeight: '1.4' }}>
+                      Accept Debit Cards, Credit Cards, NetBanking, and Instant UPI via integrated Razorpay gateway.
+                    </p>
+
+                    <button
+                      type="button"
+                      disabled={submittingOrder}
+                      onClick={() => handleConfirmPayment({ paymentMethod: 'Razorpay' })}
+                      style={{
+                        width: '100%',
+                        backgroundColor: '#7c3aed',
+                        color: '#ffffff',
+                        border: 'none',
+                        padding: '12px',
+                        borderRadius: '10px',
+                        fontSize: '14px',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        boxShadow: '0 4px 12px rgba(124, 58, 237, 0.3)'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#6d28d9'}
+                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#7c3aed'}
+                    >
+                      <ExternalLink size={16} />
+                      <span>Launch Razorpay Checkout (₹{grandTotal.toFixed(2)})</span>
+                    </button>
+                  </div>
+
+                  {/* Manual POS Card Swipe Terminal option */}
+                  <div style={{
+                    padding: '14px',
+                    borderRadius: '12px',
+                    backgroundColor: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    marginBottom: '16px'
+                  }}>
+                    <div style={{ fontSize: '13px', fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>
+                      Or Offline POS Terminal (Card Swiped at Shop):
+                    </div>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <input
+                        type="text"
+                        maxLength={4}
+                        value={cardLastFour}
+                        onChange={(e) => setCardLastFour(e.target.value.replace(/\D/g, ''))}
+                        placeholder="Card Last 4 Digits"
+                        style={{
+                          flex: 1,
+                          padding: '9px 12px',
+                          borderRadius: '8px',
+                          border: '1px solid #cbd5e1',
+                          fontSize: '13px'
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleConfirmPayment({
+                          paymentMethod: 'Card',
+                          paymentStatus: 'Paid',
+                          paymentReference: cardLastFour ? `CARD-XXXX-${cardLastFour}` : 'POS-SWIPE'
+                        })}
+                        style={{
+                          padding: '9px 16px',
+                          borderRadius: '8px',
+                          backgroundColor: '#334155',
+                          color: '#ffffff',
+                          border: 'none',
+                          fontSize: '13px',
+                          fontWeight: '700',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Confirm Swiped
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ---------------------------------------------------- */}
+              {/* TAB 5: KHATA / SHOP CREDIT */}
+              {/* ---------------------------------------------------- */}
+              {selectedPaymentOption === 'khata' && (
+                <div>
+                  <div style={{
+                    padding: '16px',
+                    borderRadius: '14px',
+                    backgroundColor: '#fff7ed',
+                    border: '1.5px solid #fdba74',
+                    marginBottom: '20px'
+                  }}>
+                    <div style={{ fontSize: '14px', fontWeight: '800', color: '#9a3412', marginBottom: '6px' }}>
+                      Add to Customer Khata (கடன் பற்று)
+                    </div>
+                    <p style={{ fontSize: '12.5px', color: '#c2410c', margin: '0 0 10px 0' }}>
+                      Record this ₹{grandTotal.toFixed(2)} bill under the customer's credit ledger for later settlement.
+                    </p>
+                    <div style={{ fontSize: '13px', fontWeight: '700', color: '#7c2d12' }}>
+                      Customer: {customerName.trim() || 'Warning: Please provide customer name'}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={submittingOrder}
+                    onClick={() => handleConfirmPayment({
+                      paymentMethod: 'Khata / Credit',
+                      paymentStatus: 'Pending',
+                      paymentReference: 'KHATA-LEDGER'
+                    })}
+                    style={{
+                      width: '100%',
+                      backgroundColor: '#ea580c',
+                      color: '#ffffff',
+                      border: 'none',
+                      padding: '14px',
+                      borderRadius: '12px',
+                      fontSize: '15px',
+                      fontWeight: '800',
+                      cursor: submittingOrder ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      boxShadow: '0 4px 14px rgba(234, 88, 12, 0.3)'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#c2410c'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#ea580c'}
+                  >
+                    <CheckCircle2 size={18} />
+                    <span>{submittingOrder ? 'Recording...' : `Record on Khata (₹${grandTotal.toFixed(2)})`}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer helper */}
+            <div style={{
+              padding: '12px 24px',
+              backgroundColor: '#f8fafc',
+              borderTop: '1px solid #e2e8f0',
+              fontSize: '11px',
+              color: '#94a3b8',
+              textAlign: 'center'
+            }}>
+              🔒 Inventory stock will automatically be updated and invoice printed upon confirmation.
             </div>
           </div>
         </div>
@@ -1635,8 +3203,28 @@ export default function CustomerBilling() {
 
                 {/* Footer Note */}
                 <div style={{ borderTop: '1px dashed #000', paddingTop: '8px', marginTop: '10px', textAlign: 'center' }}>
-                  <div>Paid by: {completedOrder.paymentMethod || 'Cash'}</div>
-                  <div style={{ marginTop: '4px', fontWeight: 'bold' }}>Thank You! Visit Again</div>
+                  <div style={{ fontWeight: 'bold' }}>Payment Mode: {completedOrder.paymentMethod || 'Cash'}</div>
+                  {completedOrder.upiId && (
+                    <div style={{ fontSize: '11px', marginTop: '2px' }}>
+                      UPI: {completedOrder.upiId}
+                    </div>
+                  )}
+                  {completedOrder.paymentReference && (
+                    <div style={{ fontSize: '11px', marginTop: '2px' }}>
+                      Ref/UTR: {completedOrder.paymentReference}
+                    </div>
+                  )}
+                  {completedOrder.amountReceived > 0 && completedOrder.amountReceived !== completedOrder.grandTotal && (
+                    <div style={{ fontSize: '11px', marginTop: '2px' }}>
+                      Recd: ₹{completedOrder.amountReceived.toFixed(2)} | Change: ₹{completedOrder.changeReturned.toFixed(2)}
+                    </div>
+                  )}
+                  {completedOrder.razorpayPaymentId && (
+                    <div style={{ fontSize: '11px', fontWeight: 'bold', marginTop: '2px', color: '#000000' }}>
+                      Razorpay TXN: {completedOrder.razorpayPaymentId}
+                    </div>
+                  )}
+                  <div style={{ marginTop: '6px', fontWeight: 'bold' }}>Thank You! Visit Again</div>
                   <div style={{ fontSize: '11px' }}>நன்றி! மீண்டும் வருக!</div>
                 </div>
               </div>
@@ -1902,6 +3490,11 @@ export default function CustomerBilling() {
 
           <div style={{ borderTop: '1px dashed #000', paddingTop: '6px', marginTop: '8px', textAlign: 'center' }}>
             <div>Payment: {completedOrder.paymentMethod || 'Cash'}</div>
+            {completedOrder.razorpayPaymentId && (
+              <div style={{ fontSize: '10px', fontWeight: 'bold', marginTop: '2px' }}>
+                Razorpay TXN: {completedOrder.razorpayPaymentId}
+              </div>
+            )}
             <div style={{ fontWeight: 'bold', marginTop: '3px' }}>Thank You! Visit Again</div>
             <div>நன்றி! மீண்டும் வருக!</div>
           </div>

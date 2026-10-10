@@ -11,7 +11,8 @@ import {
   Mic,
   Settings,
   LogOut,
-  ShoppingCart
+  ShoppingCart,
+  Sparkles
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -26,6 +27,7 @@ export default function Sidebar() {
 
   const navItems = [
     { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+    { to: '/intelligence', label: 'AI Intelligence', icon: Sparkles, badge: 'AI' },
     { to: '/billing', label: 'Voice Billing', icon: ReceiptText, badge: 'Voice' },
     { to: '/products', label: 'Products / Stock', icon: Boxes },
     { to: '/purchases', label: 'Purchase', icon: ShoppingBag },

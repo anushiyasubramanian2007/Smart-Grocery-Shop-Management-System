@@ -40,6 +40,9 @@ const productSchema = new mongoose.Schema({
   profitValue: { type: Number, default: 5, min: 0 },
   supplier: { type: String, default: 'Local Wholesale Mandi' },
   icon: { type: String, default: 'groceries' },
+  shelfLifeDays: { type: Number, default: 90 },
+  batchNumber: { type: String, default: '' },
+  expiryDate: { type: Date, default: null },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });

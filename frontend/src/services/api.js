@@ -21,6 +21,9 @@ api.interceptors.request.use(
 
 export const authAPI = {
   login: (username, password) => api.post('/auth/login', { username, password }),
+  googleLogin: (data) => api.post('/auth/google', data),
+  sendGoogleCode: (email) => api.post('/auth/google/send-code', { email }),
+  verifyGoogleCode: (data) => api.post('/auth/google/verify-code', data),
   getProfile: () => api.get('/auth/profile'),
   updateSettings: (data) => api.put('/auth/settings', data)
 };
@@ -65,6 +68,24 @@ export const orderAPI = {
   createOrder: (orderData) => api.post('/orders', orderData),
   getOrders: () => api.get('/orders'),
   getOrderById: (id) => api.get(`/orders/${id}`)
+};
+
+export const paymentAPI = {
+  createOrder: (data) => api.post('/create-order', data),
+  verifyPayment: (data) => api.post('/verify-payment', data),
+  getRazorpayConfig: () => api.get('/payment/razorpay/config'),
+  createRazorpayOrder: (data) => api.post('/create-order', data),
+  verifyRazorpayPayment: (data) => api.post('/verify-payment', data),
+  testRazorpayConnection: (data) => api.post('/payment/razorpay/test-connection', data)
+};
+
+export const intelligenceAPI = {
+  getSummary: () => api.get('/intelligence/summary'),
+  getReorderRecommendations: () => api.get('/intelligence/reorder-recommendations'),
+  getExpiryAlerts: () => api.get('/intelligence/expiry-alerts'),
+  getDeadStock: () => api.get('/intelligence/dead-stock'),
+  getProfitAnalysis: () => api.get('/intelligence/profit-analysis'),
+  simulateWhatIf: (scenario) => api.post('/intelligence/what-if', scenario)
 };
 
 export default api;

@@ -12,7 +12,11 @@ import {
   AlertTriangle,
   CheckCircle2,
   Info,
-  Globe
+  Globe,
+  Check,
+  X,
+  HelpCircle,
+  Activity
 } from 'lucide-react';
 import speechService from '../utils/speech';
 import { voiceAPI } from '../services/api';
@@ -79,6 +83,8 @@ export default function VoiceAssistant() {
   const [errorMessage, setErrorMessage] = useState('');
   const [systemResponse, setSystemResponse] = useState('');
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [volumeLevel, setVolumeLevel] = useState(0);
+  const [showTips, setShowTips] = useState(false);
 
   const [parsedCommand, setParsedCommand] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -101,32 +107,42 @@ export default function VoiceAssistant() {
 
   const handleToggleListen = () => {
     if (isListening) {
-      speechService.stopListening();
+      // User tapped while listening - finalize immediately
+      speechService.finishListening();
       setIsListening(false);
       setInterimText('');
+      setVolumeLevel(0);
     } else {
       setTranscript('');
       setInterimText('');
       setErrorMessage('');
       setSystemResponse('');
       setIsListening(true);
+      setVolumeLevel(10);
 
       speechService.startListening({
         lang: language,
-        onInterim: (text) => {
-          setInterimText(text);
+        silenceDelayMs: 2500, // Smart 2.5s silence debounce allows thinking/natural speaking pauses
+        onVolumeChange: (vol) => {
+          setVolumeLevel(vol);
+        },
+        onInterim: (interim, fullAccumulated) => {
+          setInterimText(interim);
+          setTranscript(fullAccumulated);
         },
         onResult: (text) => {
           setTranscript(text);
           setInterimText('');
           setErrorMessage('');
           setIsListening(false);
+          setVolumeLevel(0);
           processVoiceText(text);
         },
         onError: (err) => {
           console.warn('Speech error received:', err);
           setIsListening(false);
           setInterimText('');
+          setVolumeLevel(0);
           // Only show error if no command was successfully received
           if (transcript || err.code === 'aborted') {
             return;
@@ -139,9 +155,25 @@ export default function VoiceAssistant() {
         },
         onEnd: () => {
           setIsListening(false);
+          setVolumeLevel(0);
         }
       });
     }
+  };
+
+  const handleDoneSpeaking = () => {
+    speechService.finishListening();
+    setIsListening(false);
+    setInterimText('');
+    setVolumeLevel(0);
+  };
+
+  const handleCancelListening = () => {
+    speechService.stopListening();
+    setIsListening(false);
+    setInterimText('');
+    setTranscript('');
+    setVolumeLevel(0);
   };
 
   const processVoiceText = async (text) => {
@@ -442,24 +474,182 @@ export default function VoiceAssistant() {
             : `Tell me what you want to do with your shop in ${currentLangPack.label}, or type below:`}
         </p>
 
-        {/* Live Audio Waves Indicator */}
+        {/* Live Audio Waves & Realtime Speech Display */}
         {isListening && (
           <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '6px',
-            marginBottom: '20px'
+            backgroundColor: '#f8fafc',
+            border: '2px dashed #93c5fd',
+            borderRadius: '16px',
+            padding: '20px',
+            marginBottom: '24px',
+            animation: 'fadeIn 0.2s ease-in'
           }}>
-            <div style={{ width: '4px', height: '24px', backgroundColor: '#ef4444', borderRadius: '4px', animation: 'bounce 0.8s infinite' }} />
-            <div style={{ width: '4px', height: '36px', backgroundColor: '#ef4444', borderRadius: '4px', animation: 'bounce 0.6s infinite 0.2s' }} />
-            <div style={{ width: '4px', height: '18px', backgroundColor: '#ef4444', borderRadius: '4px', animation: 'bounce 0.9s infinite 0.4s' }} />
-            <div style={{ width: '4px', height: '30px', backgroundColor: '#ef4444', borderRadius: '4px', animation: 'bounce 0.7s infinite 0.1s' }} />
-            <span style={{ fontSize: '13px', fontWeight: '600', color: '#ef4444', marginLeft: '6px' }}>
-              {interimText ? `"${interimText}..."` : 'Listening for audio...'}
-            </span>
+            {/* Sound Wave Bars reacting to microphone volume */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              height: '42px',
+              marginBottom: '14px'
+            }}>
+              {[0.4, 0.8, 1.2, 0.6, 1.4, 0.9, 1.5, 0.7, 1.1, 0.5].map((multiplier, i) => {
+                const dynamicHeight = Math.min(38, Math.max(8, Math.round((volumeLevel || 15) * multiplier * 0.4)));
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      width: '4px',
+                      height: `${dynamicHeight}px`,
+                      backgroundColor: volumeLevel > 10 ? '#2563eb' : '#94a3b8',
+                      borderRadius: '4px',
+                      transition: 'height 0.1s ease',
+                      animation: volumeLevel > 5 ? `bounce 0.8s infinite ${i * 0.08}s` : 'none'
+                    }}
+                  />
+                );
+              })}
+            </div>
+
+            {/* Live Spoken Text Bubble */}
+            <div style={{
+              fontSize: '15px',
+              fontWeight: '600',
+              color: '#1e293b',
+              minHeight: '26px',
+              marginBottom: '16px',
+              wordBreak: 'break-word'
+            }}>
+              {transcript || interimText ? (
+                <span style={{ color: '#0f172a' }}>
+                  "{transcript} {interimText && <span style={{ color: '#2563eb', fontStyle: 'italic' }}>{interimText}</span>}"
+                </span>
+              ) : (
+                <span style={{ color: '#64748b', fontWeight: '400' }}>
+                  🎙️ Speak naturally at your own pace — your words appear here...
+                </span>
+              )}
+            </div>
+
+            {/* User Controls: Done Speaking or Cancel */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '12px',
+              flexWrap: 'wrap'
+            }}>
+              <button
+                type="button"
+                onClick={handleDoneSpeaking}
+                style={{
+                  backgroundColor: '#16a34a',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '10px',
+                  padding: '10px 20px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)',
+                  transition: 'background-color 0.15s, transform 0.1s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#15803d'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#16a34a'}
+              >
+                <Check size={16} />
+                <span>Done Speaking (Process Now)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCancelListening}
+                style={{
+                  backgroundColor: '#f1f5f9',
+                  color: '#64748b',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '10px',
+                  padding: '10px 16px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  cursor: 'pointer'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e2e8f0'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+              >
+                <X size={16} />
+                <span>Cancel</span>
+              </button>
+            </div>
+            <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '10px' }}>
+              💡 Auto-submits after 2.5 seconds of silence, or tap <strong>Done Speaking</strong> above.
+            </div>
           </div>
         )}
+
+        {/* ChatGPT Comparison & Voice Clarity Helper Banner */}
+        <div style={{
+          marginBottom: '20px',
+          textAlign: 'left'
+        }}>
+          <button
+            type="button"
+            onClick={() => setShowTips(!showTips)}
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: '0',
+              fontSize: '12px',
+              fontWeight: '600',
+              color: '#2563eb',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '5px',
+              cursor: 'pointer'
+            }}
+          >
+            <HelpCircle size={14} />
+            <span>{showTips ? 'Hide Voice Clarity Tips' : 'Why does voice capture differ from ChatGPT? Tips for 100% accuracy'}</span>
+          </button>
+
+          {showTips && (
+            <div style={{
+              backgroundColor: '#f0fdf4',
+              border: '1px solid #bbf7d0',
+              borderRadius: '12px',
+              padding: '16px',
+              marginTop: '10px',
+              fontSize: '12.5px',
+              color: '#166534',
+              lineHeight: '1.6'
+            }}>
+              <div style={{ fontWeight: '700', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Activity size={15} color="#16a34a" />
+                <span>How Voice Recognition Works in This System vs ChatGPT:</span>
+              </div>
+              <ul style={{ paddingLeft: '20px', margin: '0 0 10px 0' }}>
+                <li>
+                  <strong>Cloud AI vs Browser Engine:</strong> ChatGPT records raw audio and sends it to massive cloud AI (OpenAI Whisper) with billions of parameters. This web app uses the browser's high-speed Speech Engine for zero-latency instant offline action without paying API costs.
+                </li>
+                <li>
+                  <strong>Match Your Language Accent:</strong> Browser speech recognition is strictly language-aware! If speaking in Tamil or Tanglish, make sure <em>"தமிழ் / Tanglish"</em> is selected at the top right. If speaking English, choose <em>"English (India)"</em>.
+                </li>
+                <li>
+                  <strong>Continuous Mode & Hardware Noise Suppression:</strong> The mic now stays active without cutting you off when you hesitate. Ambient background noise is automatically filtered using browser echo-cancellation.
+                </li>
+                <li>
+                  <strong>"Done Speaking" Button:</strong> When you finish speaking your phrase, tap <em>"Done Speaking"</em> to immediately analyze and preview the action!
+                </li>
+              </ul>
+            </div>
+          )}
+        </div>
 
         {/* Error Alert Box */}
         {errorMessage && (

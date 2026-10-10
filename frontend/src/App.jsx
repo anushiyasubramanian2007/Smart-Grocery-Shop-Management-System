@@ -15,6 +15,7 @@ import Expenses from './pages/Expenses';
 import Reports from './pages/Reports';
 import VoiceAssistant from './pages/VoiceAssistant';
 import Settings from './pages/Settings';
+import Intelligence from './pages/Intelligence';
 
 // Protected layout wrapper
 function ProtectedLayout() {
@@ -45,6 +46,11 @@ function ProtectedLayout() {
   // Get current page header titles
   const getHeaderDetails = () => {
     switch (location.pathname) {
+      case '/intelligence':
+        return {
+          title: 'Smart Grocery Intelligence',
+          subtitle: 'Smart replenishment recommendations, FEFO expiry tracking, dead stock detection & what-if business simulation'
+        };
       case '/billing':
         return { title: 'Voice Billing & Orders', subtitle: 'Hands-free voice customer billing, live stock check, and instant thermal receipt printing' };
       case '/products':
@@ -76,6 +82,7 @@ function ProtectedLayout() {
         <main style={{ flex: 1 }}>
           <Routes>
             <Route path="/" element={<Dashboard />} />
+            <Route path="/intelligence" element={<Intelligence />} />
             <Route path="/billing" element={<CustomerBilling />} />
             <Route path="/products" element={<ProductsStock />} />
             <Route path="/purchases" element={<Purchases />} />
